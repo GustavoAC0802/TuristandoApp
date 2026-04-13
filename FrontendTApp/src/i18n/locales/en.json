@@ -1,0 +1,155 @@
+{
+  "welcome": {
+    "titleLine1": "Welcome to",
+    "titleLine2": "Turistando",
+    "subtitle": "Join thousands of travelers and make your trips easier.",
+    "createAccount": "Create an account",
+    "hasAccount": "Already have an account? Log in"
+  },
+  "common": {
+    "error": "Error",
+    "cancel": "Cancel"
+  },
+  "home": {
+    "searchPlaceholder": "Destination",
+    "loadingMap": "Loading map...",
+    "currentLocationTitle": "You are here",
+    "currentLocationDescription": "Your current location",
+    "alerts": {
+      "permissionDeniedTitle": "Permission denied",
+      "permissionDeniedMessage": "We need your location to open the map.",
+      "locationError": "Could not get your location.",
+      "emptySearchTitle": "Empty search",
+      "emptySearchMessage": "Enter a destination to search."
+    }
+  },
+  "profile": {
+    "title": "Profile",
+    "defaultUserName": "Turistando User",
+    "logout": "Log out",
+    "preferences": {
+      "title": "User preferences"
+    },
+    "biometrics": {
+      "title": "Biometrics",
+      "loginWithBiometrics": "Login with biometrics",
+      "description": "Use fingerprint or facial recognition to log in.",
+      "confirmActivation": "Confirm biometric activation",
+      "usePassword": "Use password"
+    },
+    "language": {
+      "title": "Language",
+      "portuguese": "Portuguese",
+      "english": "English",
+      "spanish": "Spanish"
+    },
+    "theme": {
+      "title": "Theme",
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "alerts": {
+      "loadPreferencesError": "Unable to load user preferences.",
+      "noBiometricSupport": "Your device does not support biometrics.",
+      "noBiometricRegistered": "No biometrics registered on the device.",
+      "biometricEnableError": "Could not enable biometrics.",
+      "saveBiometricError": "Could not save biometric settings.",
+      "languageChanged": "Language changed to {{language}}.",
+      "saveLanguageError": "Could not save language.",
+      "themeChanged": "Theme {{theme}} selected.",
+      "saveThemeError": "Could not save theme.",
+      "logoutError": "Could not log out."
+    }
+  },
+  "results": {
+    "title": "Results",
+    "resultsFor": "Results for: {{query}}",
+    "noResults": "No results found.",
+    "searchError": "Could not fetch places."
+  },
+  "filters": {
+    "title": "Filters",
+    "categories": "Categories",
+    "distance": "Distance",
+    "rating": "Rating",
+    "search": "Search",
+    "clear": "Clear",
+    "km": "km",
+    "categoryOptions": {
+      "museums": "Museums",
+      "restaurants": "Restaurants",
+      "touristAttractions": "Tourist Attractions",
+      "parks": "Parks",
+      "shopping": "Shopping malls",
+      "beauty": "Beauty",
+      "gym": "Gym",
+      "pharmacy": "Pharmacy",
+      "cafes": "Cafes"
+    }
+  },
+  "login": {
+    "title": "Sign in to your account",
+    "subtitle": "Log in to continue planning your trip.",
+    "emailLabel": "Email",
+    "emailPlaceholder": "example@email.com",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "Enter your password",
+    "enter": "Log in",
+    "loading": "Logging in...",
+    "biometricButton": "Log in with biometrics",
+    "biometricLoading": "Validating...",
+    "createAccountLink": "Don't have an account? Create one",
+    "biometrics": {
+      "disabledTitle": "Biometrics disabled",
+      "disabledMessage": "Enable biometrics in account settings first.",
+      "sessionNotFoundTitle": "Session not found",
+      "sessionNotFoundMessage": "Log in with email and password first.",
+      "promptMessage": "Log in with biometrics",
+      "usePassword": "Use password"
+    },
+    "alerts": {
+      "fillEmailPassword": "Fill in email and password.",
+      "tokenNotReceived": "Token not received on login.",
+      "loginError": "Error logging in.",
+      "biometricLoginError": "Error logging in with biometrics."
+    }
+  },
+  "register": {
+    "title": "Create a new account",
+    "subtitle": "Start by creating a free account and have everything you need to plan your trip.",
+    "name": "Name",
+    "namePlaceholder": "Enter your name",
+    "email": "Email",
+    "emailPlaceholder": "example@email.com",
+    "password": "Password",
+    "passwordPlaceholder": "Enter your password",
+    "confirmPassword": "Confirm password",
+    "confirmPasswordPlaceholder": "Enter your password again",
+    "interests": "Interests",
+    "createAccount": "Create an account",
+    "loading": "Creating account...",
+    "successTitle": "Success",
+    "successMessage": "Account created successfully!",
+    "footer": "By using Turistando, you agree to the Terms and Privacy Policy.",
+    "alerts": {
+      "fillFields": "Fill in name, email and password.",
+      "passwordMismatch": "Passwords do not match.",
+      "registerError": "Error creating account."
+    },
+    "interestOptions": {
+      "history": "History",
+      "gastronomy": "Gastronomy",
+      "adventure": "Adventure",
+      "nature": "Nature",
+      "museums": "Museums",
+      "parks": "Parks",
+      "beaches": "Beaches",
+      "events": "Events"
+    }
+  },
+  "favorites": {
+    "title": "Favorites",
+    "empty": "You don't have any favorite places yet.",
+    "helper": "Soon you'll be able to save places here."
+  }
+}

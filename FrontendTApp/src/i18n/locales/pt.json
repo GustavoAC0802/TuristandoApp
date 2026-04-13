@@ -1,0 +1,155 @@
+{
+  "welcome": {
+    "titleLine1": "Bem vindo ao",
+    "titleLine2": "Turistando",
+    "subtitle": "Junte-se a milhares de viajantes pelo mundo e facilite sua viagem.",
+    "createAccount": "Crie uma conta",
+    "hasAccount": "Já tem uma conta? Log in"
+  },
+  "common": {
+    "error": "Erro",
+    "cancel": "Cancelar"
+  },
+  "home": {
+    "searchPlaceholder": "Destino",
+    "loadingMap": "Carregando mapa...",
+    "currentLocationTitle": "Você está aqui",
+    "currentLocationDescription": "Sua localização atual",
+    "alerts": {
+      "permissionDeniedTitle": "Permissão negada",
+      "permissionDeniedMessage": "Precisamos da sua localização para abrir o mapa.",
+      "locationError": "Não foi possível obter sua localização.",
+      "emptySearchTitle": "Busca vazia",
+      "emptySearchMessage": "Digite um destino para pesquisar."
+    }
+  },
+  "profile": {
+    "title": "Perfil",
+    "defaultUserName": "Usuário Turistando",
+    "logout": "Sair da conta",
+    "preferences": {
+      "title": "Preferências do usuário"
+    },
+    "biometrics": {
+      "title": "Biometria",
+      "loginWithBiometrics": "Entrar com biometria",
+      "description": "Use digital ou reconhecimento facial para entrar.",
+      "confirmActivation": "Confirmar ativação da biometria",
+      "usePassword": "Usar senha"
+    },
+    "language": {
+      "title": "Idioma",
+      "portuguese": "Português",
+      "english": "English",
+      "spanish": "Español"
+    },
+    "theme": {
+      "title": "Tema",
+      "light": "Claro",
+      "dark": "Escuro"
+    },
+    "alerts": {
+      "loadPreferencesError": "Não foi possível carregar as preferências do usuário.",
+      "noBiometricSupport": "Seu dispositivo não suporta biometria.",
+      "noBiometricRegistered": "Nenhuma biometria cadastrada no dispositivo.",
+      "biometricEnableError": "Não foi possível ativar a biometria.",
+      "saveBiometricError": "Não foi possível salvar a biometria.",
+      "languageChanged": "Idioma alterado para {{language}}.",
+      "saveLanguageError": "Não foi possível salvar o idioma.",
+      "themeChanged": "Tema {{theme}} selecionado.",
+      "saveThemeError": "Não foi possível salvar o tema.",
+      "logoutError": "Não foi possível sair da conta."
+    }
+  },
+  "results": {
+    "title": "Resultados",
+    "resultsFor": "Resultados para: {{query}}",
+    "noResults": "Nenhum resultado encontrado.",
+    "searchError": "Não foi possível buscar os lugares."
+  },
+  "filters": {
+    "title": "Filtros",
+    "categories": "Categorias",
+    "distance": "Distância",
+    "rating": "Avaliação",
+    "search": "Pesquisar",
+    "clear": "Limpar",
+    "km": "km",
+    "categoryOptions": {
+      "museums": "Museus",
+      "restaurants": "Restaurantes",
+      "touristAttractions": "Atrações Turísticas",
+      "parks": "Parques",
+      "shopping": "Shoppings",
+      "beauty": "Beleza",
+      "gym": "Academia",
+      "pharmacy": "Farmácia",
+      "cafes": "Cafeterias"
+    }
+  },
+  "login": {
+    "title": "Entre na sua conta",
+    "subtitle": "Faça login para continuar planejando sua viagem.",
+    "emailLabel": "Email",
+    "emailPlaceholder": "example@email.com",
+    "passwordLabel": "Senha",
+    "passwordPlaceholder": "Digite sua senha",
+    "enter": "Entrar",
+    "loading": "Entrando...",
+    "biometricButton": "Entrar com biometria",
+    "biometricLoading": "Validando...",
+    "createAccountLink": "Não tem conta? Crie uma conta",
+    "biometrics": {
+      "disabledTitle": "Biometria desativada",
+      "disabledMessage": "Ative a biometria nas configurações da conta primeiro.",
+      "sessionNotFoundTitle": "Sessão não encontrada",
+      "sessionNotFoundMessage": "Faça login com email e senha primeiro.",
+      "promptMessage": "Entrar com biometria",
+      "usePassword": "Usar senha"
+    },
+    "alerts": {
+      "fillEmailPassword": "Preencha email e senha.",
+      "tokenNotReceived": "Token não recebido no login.",
+      "loginError": "Erro ao fazer login.",
+      "biometricLoginError": "Erro ao entrar com biometria."
+    }
+  },
+  "register": {
+    "title": "Crie uma conta nova",
+    "subtitle": "Comece criando uma conta nova de graça e tenha tudo para planejar sua viagem.",
+    "name": "Nome",
+    "namePlaceholder": "Digite seu nome",
+    "email": "Email",
+    "emailPlaceholder": "example@email.com",
+    "password": "Senha",
+    "passwordPlaceholder": "Digite a senha",
+    "confirmPassword": "Confirmar senha",
+    "confirmPasswordPlaceholder": "Digite novamente a senha",
+    "interests": "Interesses",
+    "createAccount": "Crie uma conta",
+    "loading": "Criando conta...",
+    "successTitle": "Sucesso",
+    "successMessage": "Conta criada com sucesso!",
+    "footer": "Ao usar o Turistando, você concorda com os Termos e a Política de Privacidade.",
+    "alerts": {
+      "fillFields": "Preencha nome, email e senha.",
+      "passwordMismatch": "As senhas não coincidem.",
+      "registerError": "Erro ao criar conta."
+    },
+    "interestOptions": {
+      "history": "História",
+      "gastronomy": "Gastronomia",
+      "adventure": "Aventura",
+      "nature": "Natureza",
+      "museums": "Museus",
+      "parks": "Parques",
+      "beaches": "Praias",
+      "events": "Eventos"
+    }
+  },
+  "favorites": {
+    "title": "Favoritos",
+    "empty": "Você ainda não tem locais favoritos.",
+    "helper": "Em breve você poderá salvar locais aqui."
+  }
+}
