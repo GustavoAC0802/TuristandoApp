@@ -10,22 +10,18 @@ import {
   Alert,
   Linking,
 } from 'react-native';
-import {
-  useFocusEffect,
-  useNavigation,
-  useRoute,
-} from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
+import { useTranslation } from 'react-i18next';
 import * as Location from 'expo-location';
 
 import api from '../services/api';
 import { toggleFavorite } from '../slices/favoriteSlice';
 import type { RootState } from '../store';
 import {
-  addRecentPlace,
   getRecentPlaces,
+  addRecentPlace,
   type RecentPlace,
 } from '../services/historyStorage';
 
@@ -51,32 +47,16 @@ type Place = {
   };
 };
 
-type RouteParams = {
-  mode?: 'nearMe';
-  title?: string;
-};
-
-export default function SearchResultsScreen() {
+export default function RecommendationsScreen() {
   const navigation = useNavigation<any>();
-  const route = useRoute<any>();
-  const { t } = useTranslation();
   const dispatch = useDispatch<any>();
-
-  const routeParams = (route.params ?? {}) as RouteParams;
-  const isNearMeMode = routeParams.mode === 'nearMe';
+  const { t } = useTranslation();
 
   const favoriteItems = useSelector((state: RootState) => state.favorites.items);
-  const searchState = useSelector((state: any) => state.search);
-
-  const searchText = searchState?.searchText ?? '';
-  const filters = searchState?.filters ?? {
-    categories: [],
-    distance: null,
-    rating: null,
-  };
 
   const [places, setPlaces] = useState<Place[]>([]);
   const [recentPlaces, setRecentPlaces] = useState<RecentPlace[]>([]);
+  const [mainCategory, setMainCategory] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
   const [userCoords, setUserCoords] = useState<{
@@ -84,21 +64,11 @@ export default function SearchResultsScreen() {
     longitude: number;
   } | null>(null);
 
-  const selectedCategories: string[] = filters.categories ?? [];
-  const minRating: number | null = filters.rating ?? null;
-  const maxDistance: number | null = filters.distance ?? null;
-
   useFocusEffect(
     useCallback(() => {
-      fetchPlaces();
-      loadRecentPlaces();
-    }, [searchText, JSON.stringify(filters), isNearMeMode])
+      loadRecommendations();
+    }, [])
   );
-
-  async function loadRecentPlaces() {
-    const recent = await getRecentPlaces();
-    setRecentPlaces(recent);
-  }
 
   async function getCurrentUserLocation() {
     if (userCoords) return userCoords;
@@ -121,46 +91,27 @@ export default function SearchResultsScreen() {
     return coords;
   }
 
-  async function saveRecentPlace(item: Place) {
-    await addRecentPlace({
-      _id: item._id,
-      name: item.name,
-      address: item.address,
-      image: item.images?.[0],
-      categories: item.categories ?? [],
-    });
-
-    await loadRecentPlaces();
-  }
-
-  async function fetchPlaces() {
+  async function loadRecommendations() {
     try {
       setLoading(true);
 
-      const coords = await getCurrentUserLocation();
+      const recent = await getRecentPlaces();
+      setRecentPlaces(recent);
 
-      if (!coords) {
-        Alert.alert(
-          'Permissão necessária',
-          'Permita o acesso à localização para calcular a distância dos locais.'
-        );
+      const category = getMainCategory(recent);
+      setMainCategory(category);
+
+      if (!category) {
+        setPlaces([]);
+        return;
       }
+
+      const coords = await getCurrentUserLocation();
 
       const response = await api.get('/places/search', {
         params: {
-          search: searchText.trim() || undefined,
-          categories:
-            selectedCategories.length > 0 ? selectedCategories : undefined,
-          minRating: minRating !== null ? minRating : undefined,
-
-          maxDistance:
-            isNearMeMode
-              ? 100
-              : maxDistance !== null
-                ? maxDistance
-                : undefined,
-
-          sortBy: isNearMeMode || maxDistance !== null ? 'distance' : 'name',
+          categories: [category],
+          sortBy: 'distance',
           page: 1,
           limit: 20,
           userLat: coords?.latitude,
@@ -186,40 +137,68 @@ export default function SearchResultsScreen() {
 
       const items: Place[] = response.data.items ?? [];
 
-      const orderedItems =
-        isNearMeMode || maxDistance !== null
-          ? [...items].sort((a, b) => {
-            const distanceA =
-              typeof a.distance === 'number' ? a.distance : Number.MAX_VALUE;
-            const distanceB =
-              typeof b.distance === 'number' ? b.distance : Number.MAX_VALUE;
+      const orderedItems = [...items].sort((a, b) => {
+        const distanceA =
+          typeof a.distance === 'number' ? a.distance : Number.MAX_VALUE;
+        const distanceB =
+          typeof b.distance === 'number' ? b.distance : Number.MAX_VALUE;
 
-            return distanceA - distanceB;
-          })
-          : items;
+        return distanceA - distanceB;
+      });
 
       setPlaces(orderedItems);
     } catch (error: any) {
-      console.log('Erro ao buscar lugares:', error?.message);
+      console.log('Erro ao buscar recomendações:', error?.message);
       console.log('URL:', error?.config?.url);
       console.log('Response:', error?.response?.data);
 
       setPlaces([]);
-      Alert.alert(t('common.error'), t('results.searchError'));
+      Alert.alert(
+        t('common.error'),
+        t('recommendations.loadError', {
+          defaultValue: 'Não foi possível carregar recomendações.',
+        })
+      );
     } finally {
       setLoading(false);
     }
   }
 
-  function getRatingText(item: Place) {
-    const reviewsCount = Number(item.reviewsCount || 0);
-    const averageRating = Math.min(Number(item.averageRating || 0), 5);
+  function getMainCategory(recent: RecentPlace[]) {
+    const count: Record<string, number> = {};
 
-    if (reviewsCount <= 0) {
-      return t('results.noReviews');
+    recent.forEach((place) => {
+      place.categories?.forEach((category) => {
+        count[category] = (count[category] || 0) + 1;
+      });
+    });
+
+    const main = Object.entries(count).sort((a, b) => b[1] - a[1])[0];
+
+    return main?.[0] ?? null;
+  }
+
+  function getCategoryLabel(category: string) {
+    const key = category.toLowerCase();
+
+    return t(`categories.${key}`, {
+      defaultValue: category,
+    });
+  }
+
+  function getRecommendationsSubtitle() {
+    if (mainCategory) {
+      const categoryLabel = getCategoryLabel(mainCategory);
+
+      return t('recommendations.basedOnCategory', {
+        category: categoryLabel,
+        defaultValue: `Baseado no seu interesse por: ${categoryLabel}`,
+      });
     }
 
-    return `⭐ ${averageRating.toFixed(1)} • ${reviewsCount} avaliações`;
+    return t('recommendations.basedOnRecent', {
+      defaultValue: 'Baseado nos locais que você visualizou recentemente',
+    });
   }
 
   function getDistanceText(distance?: number) {
@@ -232,6 +211,32 @@ export default function SearchResultsScreen() {
     }
 
     return `${distance.toFixed(1)} km ${t('results.fromYou')}`;
+  }
+
+  async function saveRecentPlace(item: Place) {
+    await addRecentPlace({
+      _id: item._id,
+      name: item.name,
+      address: item.address,
+      image: item.images?.[0],
+      categories: item.categories ?? [],
+    });
+
+    const recent = await getRecentPlaces();
+    setRecentPlaces(recent);
+  }
+
+  function getRatingText(item: Place) {
+    const reviewsCount = Number(item.reviewsCount || 0);
+    const averageRating = Math.min(Number(item.averageRating || 0), 5);
+
+    if (reviewsCount <= 0) {
+      return t('results.noReviews');
+    }
+
+    return `⭐ ${averageRating.toFixed(1)} • ${reviewsCount} ${t(
+      'details.reviews'
+    )}`;
   }
 
   function getImageUri(item: Place) {
@@ -280,7 +285,7 @@ export default function SearchResultsScreen() {
   async function handleOpenRoutes(item: Place) {
     try {
       if (!item?.location?.coordinates?.length) {
-        Alert.alert('Erro', 'Localização não disponível.');
+        Alert.alert(t('common.error'), t('details.locationUnavailable'));
         return;
       }
 
@@ -293,10 +298,10 @@ export default function SearchResultsScreen() {
       if (canOpen) {
         Linking.openURL(url);
       } else {
-        Alert.alert('Erro', 'Não foi possível abrir as rotas.');
+        Alert.alert(t('common.error'), t('details.openRoutesError'));
       }
     } catch {
-      Alert.alert('Erro', 'Não foi possível abrir as rotas.');
+      Alert.alert(t('common.error'), t('details.openRoutesError'));
     }
   }
 
@@ -351,13 +356,13 @@ export default function SearchResultsScreen() {
           <Text style={styles.cardMeta}>{getRatingText(item)}</Text>
 
           {distanceText ? (
-            <Text style={styles.cardDistance}>
-              📍 {distanceText}
-            </Text>
+            <Text style={styles.cardDistance}>📍 {distanceText}</Text>
           ) : null}
 
           {recent ? (
-            <Text style={styles.recentBadge}>{t('results.viewedRecently')}</Text>
+            <Text style={styles.recentBadge}>
+              {t('results.viewedRecently')}
+            </Text>
           ) : null}
 
           <Text style={styles.cardDescription} numberOfLines={2}>
@@ -393,12 +398,6 @@ export default function SearchResultsScreen() {
     );
   }
 
-  const subtitleText = isNearMeMode
-    ? t('results.nearMeSubtitle')
-    : searchText
-      ? t('results.resultsFor', { query: searchText })
-      : null;
-
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -410,14 +409,12 @@ export default function SearchResultsScreen() {
           <Ionicons name="arrow-back" size={24} color="#0F172A" />
         </TouchableOpacity>
 
-        <Text style={styles.title}>
-          {isNearMeMode ? t('results.nearMeTitle') : t('results.title')}
-        </Text>
+        <Text style={styles.title}>{t('recommendations.title')}</Text>
 
         <View style={styles.headerSpacer} />
       </View>
 
-      {subtitleText ? <Text style={styles.subtitle}>{subtitleText}</Text> : null}
+      <Text style={styles.subtitle}>{getRecommendationsSubtitle()}</Text>
 
       {loading ? (
         <View style={styles.loadingWrapper}>
@@ -431,9 +428,10 @@ export default function SearchResultsScreen() {
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             <Text style={styles.emptyText}>
-              {isNearMeMode
-                ? 'Nenhum local próximo encontrado.'
-                : t('results.noResults')}
+              {t('recommendations.emptyHint', {
+                defaultValue:
+                  'Visualize alguns locais primeiro para receber recomendações.',
+              })}
             </Text>
           }
           showsVerticalScrollIndicator={false}
@@ -450,14 +448,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 16,
   },
-
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 10,
     marginBottom: 8,
   },
-
   backButton: {
     marginTop: 20,
     width: 40,
@@ -469,7 +465,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
-
   title: {
     marginTop: 20,
     flex: 1,
@@ -478,27 +473,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0F172A',
   },
-
   headerSpacer: {
     width: 40,
   },
-
   subtitle: {
     fontSize: 14,
     color: '#64748B',
     marginBottom: 14,
   },
-
   listContent: {
     paddingBottom: 20,
   },
-
   loadingWrapper: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-
   card: {
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
@@ -509,7 +499,6 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     position: 'relative',
   },
-
   favoriteButton: {
     position: 'absolute',
     top: 10,
@@ -524,7 +513,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
-
   detailsButton: {
     position: 'absolute',
     top: 52,
@@ -539,7 +527,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
-
   cardImage: {
     width: 90,
     height: 90,
@@ -547,52 +534,44 @@ const styles = StyleSheet.create({
     marginRight: 12,
     backgroundColor: '#CBD5E1',
   },
-
   cardContent: {
     flex: 1,
     justifyContent: 'center',
     paddingRight: 34,
   },
-
   cardTitle: {
     fontSize: 16,
     fontWeight: '700',
     marginBottom: 6,
     color: '#0F172A',
   },
-
   cardMeta: {
     fontSize: 14,
     color: '#475569',
     marginBottom: 4,
   },
-
   recentBadge: {
     fontSize: 11,
     fontWeight: '800',
     color: '#2563EB',
     marginBottom: 6,
   },
-
   cardDistance: {
     fontSize: 13,
     color: '#2563EB',
     fontWeight: '800',
     marginBottom: 6,
   },
-
   cardDescription: {
     fontSize: 13,
     color: '#64748B',
     lineHeight: 18,
     marginBottom: 4,
   },
-
   cardAddress: {
     fontSize: 12,
     color: '#94A3B8',
   },
-
   routeButton: {
     height: 38,
     borderRadius: 12,
@@ -605,16 +584,15 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     paddingHorizontal: 14,
   },
-
   routeButtonText: {
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '800',
   },
-
   emptyText: {
     textAlign: 'center',
     marginTop: 32,
     color: '#64748B',
+    lineHeight: 20,
   },
 });

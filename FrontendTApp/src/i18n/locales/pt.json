@@ -8,7 +8,8 @@
   },
   "common": {
     "error": "Erro",
-    "cancel": "Cancelar"
+    "cancel": "Cancelar",
+    "locale": "pt-BR"
   },
   "home": {
     "searchPlaceholder": "Destino",
@@ -65,7 +66,14 @@
     "title": "Resultados",
     "resultsFor": "Resultados para: {{query}}",
     "noResults": "Nenhum resultado encontrado.",
-    "searchError": "Não foi possível buscar os lugares."
+    "searchError": "Não foi possível buscar os lugares.",
+    "nearMeTitle": "Locais próximos",
+    "nearMeSubtitle": "Ordenados pela menor distância até você",
+    "nearMeEmpty": "Nenhum local próximo encontrado.",
+    "noReviews": "Ainda sem avaliações",
+    "viewedRecently": "Visualizado recentemente",
+    "fromYou": "de você",
+    "routes": "Ver rotas"
   },
   "filters": {
     "title": "Filtros",
@@ -84,7 +92,13 @@
       "beauty": "Beleza",
       "gym": "Academia",
       "pharmacy": "Farmácia",
-      "cafes": "Cafeterias"
+      "cafes": "Cafeterias",
+      "fun": "Diversão",
+      "nature": "Natureza",
+      "games": "Jogos",
+      "sports": "Esportes",
+      "art": "Arte",
+      "technology": "Tecnologia"
     }
   },
   "login": {
@@ -151,5 +165,132 @@
     "title": "Favoritos",
     "empty": "Você ainda não tem locais favoritos.",
     "helper": "Em breve você poderá salvar locais aqui."
+  },
+  "details": {
+    "aboutPlace": "Sobre o local",
+    "addressUnavailable": "Endereço não informado",
+    "weather": "Clima",
+    "weatherForecast": "Previsão do tempo",
+    "events": "Eventos próximos",
+    "visitedHours": "Horários mais visitados",
+    "safety": "Segurança",
+    "safetyZone": "Zona de segurança",
+    "accessibility": "Acessibilidade",
+    "comments": "Comentários",
+    "localInfo": "Informações do local",
+    "address": "Endereço",
+    "openingHours": "Horário de funcionamento",
+    "phone": "Telefone",
+    "website": "Site",
+    "routes": "Rotas",
+    "openOnMap": "Abrir no mapa",
+    "link": "Link",
+    "free": "Gratuito",
+    "paid": "Pago",
+    "to": "às",
+    "today": "Hoje",
+    "tomorrow": "Amanhã",
+    "reviews": "avaliações",
+    "noEvents": "Nenhum evento próximo encontrado.",
+    "loadingEvents": "Carregando eventos...",
+    "loadingForecast": "Carregando previsão...",
+    "forecastLoadError": "Não foi possível carregar a previsão do tempo.",
+    "noAdditionalInfo": "Nenhuma informação adicional disponível.",
+    "placeNotFound": "Local não encontrado.",
+    "loadError": "Não foi possível carregar os detalhes do local.",
+    "openWebsiteError": "Não foi possível abrir o site.",
+    "openPhoneError": "Não foi possível abrir o telefone.",
+    "locationUnavailable": "Localização do lugar não disponível.",
+    "openRoutesError": "Não foi possível abrir as rotas.",
+    "shareError": "Não foi possível compartilhar este local.",
+    "shareTitle": "Conheça",
+    "shareMessage": "Confira {{name}} no Turistando!",
+    "openInApp": "Abrir no app",
+    "accessibilityDescription": "Avaliações colaborativas sobre acessibilidade do local.",
+    "noAccessibilityReviews": "Nenhuma avaliação de acessibilidade ainda.",
+    "evaluateAccessibility": "Avaliar acessibilidade",
+    "accessibilityHelp": "Ajude outras pessoas avaliando a acessibilidade deste local.",
+    "howDoYouRate": "Como você avalia?",
+    "safetyLevels": {
+      "verySafe": "Muito seguro",
+      "littleSafe": "Pouco seguro",
+      "notSafe": "Nada seguro"
+    },
+    "accessibilityLabels": {
+      "noReviews": "Sem avaliações",
+      "goodAccessibility": "Boa acessibilidade",
+      "mediumAccessibility": "Acessibilidade mediana",
+      "lowAccessibility": "Baixa acessibilidade",
+      "noData": "Sem dados",
+      "notAvailable": "Não possui",
+      "good": "Bom",
+      "partial": "Parcial",
+      "bad": "Ruim",
+      "yes": "Sim",
+      "no": "Não",
+      "unknown": "Não sei"
+    },
+    "accessibilityFields": {
+      "adaptedBathroom": "Banheiro adaptado",
+      "rampAccess": "Rampas",
+      "elevatorAccess": "Elevadores",
+      "tactilePaving": "Piso tátil",
+      "accessibleParking": "Estacionamento acessível"
+    }
+  },
+  "recommendations": {
+    "title": "Recomendações",
+    "subtitle": "Locais recomendados para você",
+    "empty": "Nenhuma recomendação encontrada.",
+    "loadError": "Não foi possível carregar recomendações.",
+    "basedOnCategory": "Baseado no seu interesse por: {{category}}",
+    "basedOnRecent": "Baseado nos locais que você visualizou recentemente",
+    "emptyHint": "Visualize alguns locais primeiro para receber recomendações."
+  },
+  "onboarding": {
+    "next": "Próximo",
+    "finish": "Finalizar",
+    "skip": "Não mostrar novamente",
+    "slides": {
+      "discover": {
+        "title": "Descubra novos lugares",
+        "description": "Explore atrações, parques, museus e pontos turísticos ao redor do mundo."
+      },
+      "favorites": {
+        "title": "Salve seus favoritos",
+        "description": "Adicione locais favoritos e encontre tudo rapidamente depois."
+      },
+      "events": {
+        "title": "Veja eventos próximos",
+        "description": "Descubra eventos, exposições e atrações acontecendo perto de você."
+      },
+      "routes": {
+        "title": "Rotas rápidas",
+        "description": "Abra rotas diretamente no mapa e encontre o melhor caminho."
+      }
+    }
+  },
+  "categories": {
+    "história": "História",
+    "gastronomia": "Gastronomia",
+    "aventura": "Aventura",
+    "parque": "Parque",
+    "museu": "Museu",
+    "café": "Café",
+    "diversão": "Diversão",
+    "natureza": "Natureza",
+    "jogos": "Jogos",
+    "esportes": "Esportes",
+    "arte": "Arte",
+    "tecnologia": "Tecnologia"
+  },
+  "weekdays": {
+    "monday": "Segunda-feira",
+    "tuesday": "Terça-feira",
+    "wednesday": "Quarta-feira",
+    "thursday": "Quinta-feira",
+    "friday": "Sexta-feira",
+    "saturday": "Sábado",
+    "sunday": "Domingo"
   }
 }

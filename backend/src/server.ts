@@ -5,6 +5,10 @@ import dotenv from "dotenv";
 import userRoutes from "./routes/userRoutes";
 import favoriteRoutes from "./routes/favoriteRoutes";
 import placeRoutes from "./routes/placeRoutes";
+import reviewRoutes from './routes/reviewRoutes';
+import weatherRoutes from './routes/weatherRoutes';
+import accessibilityRoutes from './routes/accessibilityRoutes';
+import eventRoutes from "./routes/eventRoutes";
 
 dotenv.config();
 
@@ -19,6 +23,10 @@ mongoose.connect(process.env.MONGO_URI!)
 app.use("/users", userRoutes);
 app.use("/favorites", favoriteRoutes);
 app.use("/places", placeRoutes);
+app.use('/reviews', reviewRoutes);
+app.use('/weather', weatherRoutes);
+app.use('/accessibility', accessibilityRoutes);
+app.use("/events", eventRoutes);
 
 app.listen(3000, '0.0.0.0', () => {
   console.log('Servidor rodando');

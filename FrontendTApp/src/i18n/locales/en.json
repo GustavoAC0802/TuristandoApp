@@ -65,7 +65,14 @@
     "title": "Results",
     "resultsFor": "Results for: {{query}}",
     "noResults": "No results found.",
-    "searchError": "Could not fetch places."
+    "searchError": "Could not fetch places.",
+    "nearMeTitle": "Nearby places",
+    "nearMeSubtitle": "Sorted by closest distance to you",
+    "nearMeEmpty": "No nearby places found.",
+    "noReviews": "No reviews yet",
+    "viewedRecently": "Recently viewed",
+    "fromYou": "from you",
+    "routes": "View routes"
   },
   "filters": {
     "title": "Filters",
@@ -84,7 +91,13 @@
       "beauty": "Beauty",
       "gym": "Gym",
       "pharmacy": "Pharmacy",
-      "cafes": "Cafes"
+      "cafes": "Cafes",
+      "fun": "Fun",
+      "nature": "Nature",
+      "games": "Games",
+      "sports": "Sports",
+      "art": "Art",
+      "technology": "Technology"
     }
   },
   "login": {
@@ -151,5 +164,132 @@
     "title": "Favorites",
     "empty": "You don't have any favorite places yet.",
     "helper": "Soon you'll be able to save places here."
+  },
+  "details": {
+    "aboutPlace": "About this place",
+    "addressUnavailable": "Address not available",
+    "weather": "Weather",
+    "weatherForecast": "Weather forecast",
+    "events": "Upcoming events",
+    "visitedHours": "Most visited hours",
+    "safety": "Safety",
+    "safetyZone": "Safety zone",
+    "accessibility": "Accessibility",
+    "comments": "Comments",
+    "localInfo": "Place information",
+    "address": "Address",
+    "openingHours": "Opening hours",
+    "phone": "Phone",
+    "website": "Website",
+    "routes": "Routes",
+    "openOnMap": "Open on map",
+    "link": "Link",
+    "free": "Free",
+    "paid": "Paid",
+    "to": "to",
+    "today": "Today",
+    "tomorrow": "Tomorrow",
+    "reviews": "reviews",
+    "noEvents": "No upcoming events found.",
+    "loadingEvents": "Loading events...",
+    "loadingForecast": "Loading forecast...",
+    "forecastLoadError": "Could not load the weather forecast.",
+    "noAdditionalInfo": "No additional information available.",
+    "placeNotFound": "Place not found.",
+    "loadError": "Could not load place details.",
+    "openWebsiteError": "Could not open the website.",
+    "openPhoneError": "Could not open the phone.",
+    "locationUnavailable": "Place location unavailable.",
+    "openRoutesError": "Could not open routes.",
+    "shareError": "Could not share this place.",
+    "shareTitle": "Check out",
+    "shareMessage": "Check out {{name}} on Turistando!",
+    "openInApp": "Open in app",
+    "accessibilityDescription": "Collaborative accessibility reviews for this place.",
+    "noAccessibilityReviews": "No accessibility reviews yet.",
+    "evaluateAccessibility": "Evaluate accessibility",
+    "accessibilityHelp": "Help other people by reviewing this place's accessibility.",
+    "saveAccessibilityReview": "Save accessibility review",
+    "publicAccessibilityReview": "Your review is public and helps other people.",
+    "addComment": "Add comment",
+    "writeExperience": "Write your experience...",
+    "publishComment": "Publish comment",
+    "noComments": "No comments yet. Be the first to comment.",
+    "accessibilityPlaceholder": "Accessibility notes...",
+    "loadingComments": "Loading comments...",
+    "howDoYouRate": "How do you rate it?",
+    "safetyLevels": {
+      "verySafe": "Very safe",
+      "littleSafe": "Less safe",
+      "notSafe": "Not safe"
+    },
+    "accessibilityLabels": {
+      "noReviews": "No reviews",
+      "goodAccessibility": "Good accessibility",
+      "mediumAccessibility": "Medium accessibility",
+      "lowAccessibility": "Low accessibility",
+      "noData": "No data",
+      "notAvailable": "Not available",
+      "good": "Good",
+      "partial": "Partial",
+      "bad": "Bad",
+      "yes": "Yes",
+      "no": "No",
+      "unknown": "I don't know"
+    },
+    "accessibilityFields": {
+      "adaptedBathroom": "Adapted bathroom",
+      "rampAccess": "Ramps",
+      "elevatorAccess": "Elevators",
+      "tactilePaving": "Tactile paving",
+      "accessibleParking": "Accessible parking"
+    }
+  },
+
+  "recommendations": {
+    "title": "Recommendations",
+    "subtitle": "Recommended places for you",
+    "empty": "No recommendations found.",
+    "loadError": "Could not load recommendations.",
+    "basedOnCategory": "Based on your interest in: {{category}}",
+    "basedOnRecent": "Based on the places you recently viewed",
+    "emptyHint": "View some places first to receive recommendations."
+  },
+
+  "onboarding": {
+    "next": "Next",
+    "finish": "Finish",
+    "skip": "Don't show again",
+
+    "slides": {
+      "discover": {
+        "title": "Discover new places",
+        "description": "Explore attractions, parks, museums and tourist spots around the world."
+      },
+
+      "favorites": {
+        "title": "Save your favorites",
+        "description": "Add favorite places and quickly find everything later."
+      },
+
+      "events": {
+        "title": "See nearby events",
+        "description": "Discover events, exhibitions and attractions happening near you."
+      },
+
+      "routes": {
+        "title": "Quick routes",
+        "description": "Open routes directly on the map and find the best path."
+      }
+    }
+  },
+  "weekdays": {
+    "monday": "Monday",
+    "tuesday": "Tuesday",
+    "wednesday": "Wednesday",
+    "thursday": "Thursday",
+    "friday": "Friday",
+    "saturday": "Saturday",
+    "sunday": "Sunday"
   }
 }

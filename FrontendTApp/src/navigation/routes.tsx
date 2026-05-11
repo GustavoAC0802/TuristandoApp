@@ -9,8 +9,19 @@ import RegisterScreen from '../screens/Register';
 import MainTabs from './tabs';
 import FiltersScreen from '../screens/Filter';
 import ResultsScreen from '../screens/Result';
+import DetailsScreen from '../screens/Details';
+import RecommendationsScreen from '../screens/Recommendations';
 
 const Stack = createNativeStackNavigator();
+
+const linking = {
+  prefixes: ['frontendtapp://'],
+  config: {
+    screens: {
+      Details: 'place/:placeId',
+    },
+  },
+};
 
 export default function Routes() {
   const isAuthenticated = useSelector(
@@ -18,13 +29,18 @@ export default function Routes() {
   );
 
   return (
-    <NavigationContainer>
+    <NavigationContainer linking={linking}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {isAuthenticated ? (
           <>
             <Stack.Screen name="MainTabs" component={MainTabs} />
             <Stack.Screen name="Filters" component={FiltersScreen} />
             <Stack.Screen name="Results" component={ResultsScreen} />
+            <Stack.Screen name="Details" component={DetailsScreen} />
+            <Stack.Screen
+              name="Recommendations"
+              component={RecommendationsScreen}
+            />
           </>
         ) : (
           <>
