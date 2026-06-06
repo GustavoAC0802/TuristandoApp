@@ -11,6 +11,8 @@ import FiltersScreen from '../screens/Filter';
 import ResultsScreen from '../screens/Result';
 import DetailsScreen from '../screens/Details';
 import RecommendationsScreen from '../screens/Recommendations';
+import UsefulPhrasesScreen from '../screens/UsefulPhrases';
+import ItineraryScreen from '../screens/Itinerary';
 
 const Stack = createNativeStackNavigator();
 
@@ -19,6 +21,7 @@ const linking = {
   config: {
     screens: {
       Details: 'place/:placeId',
+      UsefulPhrases: 'useful-phrases',
     },
   },
 };
@@ -34,18 +37,34 @@ export default function Routes() {
         {isAuthenticated ? (
           <>
             <Stack.Screen name="MainTabs" component={MainTabs} />
+
             <Stack.Screen name="Filters" component={FiltersScreen} />
+
             <Stack.Screen name="Results" component={ResultsScreen} />
+
             <Stack.Screen name="Details" component={DetailsScreen} />
+
             <Stack.Screen
               name="Recommendations"
               component={RecommendationsScreen}
+            />
+
+            <Stack.Screen
+              name="UsefulPhrases"
+              component={UsefulPhrasesScreen}
+            />
+
+            <Stack.Screen
+              name="ItineraryDetails"
+              component={ItineraryScreen}
             />
           </>
         ) : (
           <>
             <Stack.Screen name="Welcome" component={WelcomeScreen} />
+
             <Stack.Screen name="Login" component={LoginScreen} />
+
             <Stack.Screen name="Register" component={RegisterScreen} />
           </>
         )}

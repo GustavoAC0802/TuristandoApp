@@ -5,15 +5,12 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import HomeScreen from '../screens/Home';
 import ProfileScreen from '../screens/Profile';
 import FavoritesScreen from '../screens/Favorite';
+import ItineraryScreen from '../screens/Itinerary';
 
 import HomeIcon from '../assets/images/Home.png';
 import ExploreIcon from '../assets/images/UserRoutes.png';
 import FavoritesIcon from '../assets/images/Favorite.png';
 import ProfileIcon from '../assets/images/Profile.png';
-
-function PlaceholderScreen() {
-  return null;
-}
 
 const Tab = createBottomTabNavigator();
 
@@ -57,8 +54,8 @@ export default function MainTabs() {
       />
 
       <Tab.Screen
-        name="ExploreTab"
-        component={PlaceholderScreen}
+        name="ItineraryTab"
+        component={ItineraryScreen}
         options={{
           tabBarIcon: ({ focused }) => (
             <Image

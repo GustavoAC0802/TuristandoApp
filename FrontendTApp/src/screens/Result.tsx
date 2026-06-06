@@ -28,6 +28,11 @@ import {
   getRecentPlaces,
   type RecentPlace,
 } from '../services/historyStorage';
+import {
+  getOfflinePlaces,
+  savePlacesOffline,
+  type OfflinePlace,
+} from '../database/offlinePlaces';
 
 const FALLBACK_IMAGE =
   'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/No_image_available.svg/480px-No_image_available.svg.png';
@@ -35,12 +40,14 @@ const FALLBACK_IMAGE =
 type Place = {
   _id: string;
   name: string;
+  city?: string;
   description: string;
   categories: string[];
   address: string;
   openingHours?: string;
   contact?: string;
   website?: string;
+  image?: string;
   images?: string[];
   distance?: number;
   averageRating?: number;
@@ -78,6 +85,7 @@ export default function SearchResultsScreen() {
   const [places, setPlaces] = useState<Place[]>([]);
   const [recentPlaces, setRecentPlaces] = useState<RecentPlace[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
   const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
   const [userCoords, setUserCoords] = useState<{
     latitude: number;
@@ -121,12 +129,137 @@ export default function SearchResultsScreen() {
     return coords;
   }
 
+  function calculateDistanceKm(
+    userLat: number,
+    userLng: number,
+    placeLat: number,
+    placeLng: number
+  ) {
+    const earthRadiusKm = 6371;
+
+    const toRad = (value: number) => (value * Math.PI) / 180;
+
+    const dLat = toRad(placeLat - userLat);
+    const dLng = toRad(placeLng - userLng);
+
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRad(userLat)) *
+      Math.cos(toRad(placeLat)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return earthRadiusKm * c;
+  }
+
+  function normalizeOfflinePlace(place: OfflinePlace): Place {
+    return {
+      _id: place._id,
+      name: place.name,
+      city: place.city,
+      description: place.description || '',
+      categories: place.categories || [],
+      address: place.address || '',
+      openingHours: place.openingHours,
+      contact: place.contact,
+      website: place.website,
+      image: place.image,
+      images: place.images?.length ? place.images : place.image ? [place.image] : [],
+      averageRating: place.averageRating,
+      reviewsCount: place.reviewsCount,
+      location: {
+        type: place.location?.type || 'Point',
+        coordinates: place.location?.coordinates || [0, 0],
+      },
+    };
+  }
+
+  function applyOfflineFilters(items: Place[], coords?: { latitude: number; longitude: number } | null) {
+    let filtered = [...items];
+
+    const normalizedSearch = searchText.trim().toLowerCase();
+
+    if (normalizedSearch) {
+      filtered = filtered.filter((item) => {
+        const name = item.name?.toLowerCase() || '';
+        const city = item.city?.toLowerCase() || '';
+        const description = item.description?.toLowerCase() || '';
+        const address = item.address?.toLowerCase() || '';
+
+        return (
+          name.includes(normalizedSearch) ||
+          city.includes(normalizedSearch) ||
+          description.includes(normalizedSearch) ||
+          address.includes(normalizedSearch)
+        );
+      });
+    }
+
+    if (selectedCategories.length > 0) {
+      filtered = filtered.filter((item) =>
+        selectedCategories.some((category) =>
+          item.categories?.includes(category)
+        )
+      );
+    }
+
+    if (minRating !== null) {
+      filtered = filtered.filter((item) => Number(item.averageRating || 0) >= minRating);
+    }
+
+    if (coords) {
+      filtered = filtered.map((item) => {
+        const [lng, lat] = item.location?.coordinates || [];
+
+        if (typeof lat !== 'number' || typeof lng !== 'number') {
+          return item;
+        }
+
+        return {
+          ...item,
+          distance: calculateDistanceKm(coords.latitude, coords.longitude, lat, lng),
+        };
+      });
+    }
+
+    if (isNearMeMode) {
+      filtered = filtered.filter((item) => {
+        if (typeof item.distance !== 'number') return false;
+        return item.distance <= 100;
+      });
+    }
+
+    if (maxDistance !== null) {
+      filtered = filtered.filter((item) => {
+        if (typeof item.distance !== 'number') return false;
+        return item.distance <= maxDistance;
+      });
+    }
+
+    if (isNearMeMode || maxDistance !== null) {
+      filtered.sort((a, b) => {
+        const distanceA =
+          typeof a.distance === 'number' ? a.distance : Number.MAX_VALUE;
+        const distanceB =
+          typeof b.distance === 'number' ? b.distance : Number.MAX_VALUE;
+
+        return distanceA - distanceB;
+      });
+    } else {
+      filtered.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    return filtered;
+  }
+
   async function saveRecentPlace(item: Place) {
     await addRecentPlace({
       _id: item._id,
       name: item.name,
       address: item.address,
-      image: item.images?.[0],
+      image: item.images?.[0] || item.image,
       categories: item.categories ?? [],
     });
 
@@ -136,6 +269,7 @@ export default function SearchResultsScreen() {
   async function fetchPlaces() {
     try {
       setLoading(true);
+      setIsOfflineMode(false);
 
       const coords = await getCurrentUserLocation();
 
@@ -199,13 +333,43 @@ export default function SearchResultsScreen() {
           : items;
 
       setPlaces(orderedItems);
+
+      try {
+        await savePlacesOffline(orderedItems);
+        console.log('Locais salvos offline:', orderedItems.length);
+      } catch (offlineSaveError) {
+        console.log('Erro ao salvar locais offline:', offlineSaveError);
+      }
     } catch (error: any) {
       console.log('Erro ao buscar lugares:', error?.message);
       console.log('URL:', error?.config?.url);
       console.log('Response:', error?.response?.data);
 
-      setPlaces([]);
-      Alert.alert(t('common.error'), t('results.searchError'));
+      try {
+        const coords = userCoords ?? await getCurrentUserLocation();
+        const offlineRecords = await getOfflinePlaces();
+        const offlineItems = offlineRecords.map(normalizeOfflinePlace);
+        const filteredOfflineItems = applyOfflineFilters(offlineItems, coords);
+
+        setPlaces(filteredOfflineItems);
+        setIsOfflineMode(true);
+
+        if (filteredOfflineItems.length === 0) {
+          Alert.alert(
+            'Modo offline',
+            'Não foi possível conectar à internet e não existem locais salvos para esta busca.'
+          );
+        } else {
+          Alert.alert(
+            'Modo offline',
+            'Sem conexão com a API. Exibindo locais salvos no dispositivo.'
+          );
+        }
+      } catch (offlineError) {
+        console.log('Erro ao carregar locais offline:', offlineError);
+        setPlaces([]);
+        Alert.alert(t('common.error'), t('results.searchError'));
+      }
     } finally {
       setLoading(false);
     }
@@ -237,7 +401,7 @@ export default function SearchResultsScreen() {
   function getImageUri(item: Place) {
     if (imageErrors[item._id]) return FALLBACK_IMAGE;
 
-    const imageUrl = item.images?.[0];
+    const imageUrl = item.images?.[0] || item.image;
 
     if (!imageUrl || !imageUrl.startsWith('https://')) {
       return FALLBACK_IMAGE;
@@ -270,6 +434,7 @@ export default function SearchResultsScreen() {
 
     navigation.navigate('Details', {
       placeId: item._id,
+      offlinePlace: isOfflineMode ? item : undefined,
     });
   }
 
@@ -419,6 +584,15 @@ export default function SearchResultsScreen() {
 
       {subtitleText ? <Text style={styles.subtitle}>{subtitleText}</Text> : null}
 
+      {isOfflineMode ? (
+        <View style={styles.offlineBanner}>
+          <Ionicons name="cloud-offline-outline" size={18} color="#92400E" />
+          <Text style={styles.offlineBannerText}>
+            Modo offline: exibindo locais salvos no dispositivo.
+          </Text>
+        </View>
+      ) : null}
+
       {loading ? (
         <View style={styles.loadingWrapper}>
           <ActivityIndicator size="large" color="#3B82F6" />
@@ -431,9 +605,11 @@ export default function SearchResultsScreen() {
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             <Text style={styles.emptyText}>
-              {isNearMeMode
-                ? 'Nenhum local próximo encontrado.'
-                : t('results.noResults')}
+              {isOfflineMode
+                ? 'Nenhum local salvo offline para esta busca.'
+                : isNearMeMode
+                  ? 'Nenhum local próximo encontrado.'
+                  : t('results.noResults')}
             </Text>
           }
           showsVerticalScrollIndicator={false}
@@ -487,6 +663,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#64748B',
     marginBottom: 14,
+  },
+
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 12,
+  },
+
+  offlineBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#92400E',
+    fontWeight: '700',
   },
 
   listContent: {

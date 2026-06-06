@@ -94,7 +94,7 @@ export default function HomeScreen() {
   useFocusEffect(
     React.useCallback(() => {
       setShowSearchHistory(false);
-      return () => { };
+      return () => {};
     }, [])
   );
 
@@ -191,6 +191,11 @@ export default function HomeScreen() {
   function handleOpenRecommendations() {
     navigation.navigate('Recommendations');
   }
+
+  function handleOpenUsefulPhrases() {
+    navigation.navigate('UsefulPhrases');
+  }
+
 
   async function handleSearch() {
     Keyboard.dismiss();
@@ -351,15 +356,15 @@ export default function HomeScreen() {
 
   const selectedPlaceCoordinates = selectedPlace?.location?.coordinates
     ? {
-      latitude: selectedPlace.location.coordinates[1],
-      longitude: selectedPlace.location.coordinates[0],
-    }
+        latitude: selectedPlace.location.coordinates[1],
+        longitude: selectedPlace.location.coordinates[0],
+      }
     : null;
 
   const selectedPlaceImage =
     !cardImageError &&
-      selectedPlace?.images?.[0] &&
-      selectedPlace.images[0].startsWith('https://')
+    selectedPlace?.images?.[0] &&
+    selectedPlace.images[0].startsWith('https://')
       ? selectedPlace.images[0]
       : FALLBACK_IMAGE;
 
@@ -525,7 +530,9 @@ export default function HomeScreen() {
                 </Text>
 
                 <TouchableOpacity onPress={handleClearHistory}>
-                  <Text style={styles.clearHistoryText}>{t('filters.clear')}</Text>
+                  <Text style={styles.clearHistoryText}>
+                    {t('filters.clear')}
+                  </Text>
                 </TouchableOpacity>
               </View>
 
@@ -555,6 +562,56 @@ export default function HomeScreen() {
               ))}
             </View>
           ) : null}
+
+          <TouchableOpacity
+            style={[
+              styles.translateShortcut,
+              {
+                backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+                borderColor: isDark ? '#334155' : '#E2E8F0',
+              },
+            ]}
+            activeOpacity={0.85}
+            onPress={handleOpenUsefulPhrases}
+          >
+            <View
+              style={[
+                styles.translateIconBox,
+                {
+                  backgroundColor: isDark ? '#172554' : '#DBEAFE',
+                },
+              ]}
+            >
+              <Ionicons name="language-outline" size={22} color="#2563EB" />
+            </View>
+
+            <View style={styles.translateTextBox}>
+              <Text
+                style={[
+                  styles.translateShortcutTitle,
+                  { color: isDark ? '#FFFFFF' : '#0F172A' },
+                ]}
+              >
+                Tradutor turístico
+              </Text>
+
+              <Text
+                style={[
+                  styles.translateShortcutSubtitle,
+                  { color: isDark ? '#CBD5E1' : '#64748B' },
+                ]}
+              >
+                Frases úteis em inglês e espanhol
+              </Text>
+            </View>
+
+            <Ionicons
+              name="chevron-forward"
+              size={20}
+              color={isDark ? '#CBD5E1' : '#94A3B8'}
+            />
+          </TouchableOpacity>
+
         </View>
 
         <View style={styles.mapWrapper}>
@@ -810,6 +867,47 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     fontWeight: '700',
+  },
+
+  translateShortcut: {
+    marginTop: 10,
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.07,
+    shadowRadius: 6,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    elevation: 2,
+  },
+
+  translateIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+
+  translateTextBox: {
+    flex: 1,
+  },
+
+  translateShortcutTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  translateShortcutSubtitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
   },
 
   mapWrapper: {

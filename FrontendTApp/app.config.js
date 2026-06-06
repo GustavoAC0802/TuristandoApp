@@ -8,22 +8,45 @@ export default {
     orientation: 'portrait',
     icon: './assets/icon.png',
     userInterfaceStyle: 'light',
-    newArchEnabled: true,
+    newArchEnabled: false,
+    scheme: 'frontendtapp',
     splash: {
       image: './assets/splash-icon.png',
       resizeMode: 'contain',
       backgroundColor: '#ffffff',
     },
+    plugins: [
+      [
+        'expo-local-authentication',
+        {
+          faceIDPermission:
+            'Permita que o Turistando use sua biometria para entrar no app.',
+        },
+      ],
+      [
+        'expo-secure-store',
+        {
+          configureAndroidBackup: true,
+          faceIDPermission:
+            'Permita que o Turistando proteja sua sessão com biometria.',
+        },
+      ],
+      'expo-build-properties',
+      '@morrowdigital/watermelondb-expo-plugin',
+    ],
     ios: {
       supportsTablet: true,
+      userInterfaceStyle: 'automatic',
     },
     android: {
+      softwareKeyboardLayoutMode: 'resize',
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
         backgroundColor: '#ffffff',
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
+      userInterfaceStyle: 'automatic',
     },
     web: {
       favicon: './assets/favicon.png',

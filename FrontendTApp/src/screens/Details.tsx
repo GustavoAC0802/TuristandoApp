@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import api from '../services/api';
 import { useTranslation } from 'react-i18next';
 
+
 const FALLBACK_IMAGE =
   'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/No_image_available.svg/480px-No_image_available.svg.png';
 
@@ -81,6 +82,15 @@ type Event = {
   image?: string;
   category: string;
   isFree: boolean;
+};
+
+type CheckInStats = {
+  totalCheckIns: number;
+  points: number;
+  badge: {
+    title: string;
+    description: string;
+  } | null;
 };
 
 type Place = {
@@ -208,6 +218,11 @@ export default function DetailsScreen() {
   const [events, setEvents] = useState<Event[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
 
+  const [checkedIn, setCheckedIn] = useState(false);
+  const [checkInLoading, setCheckInLoading] = useState(false);
+  const [checkInStats, setCheckInStats] = useState<CheckInStats | null>(null);
+  const [placeCheckIns, setPlaceCheckIns] = useState(0);
+
   const [accessibilitySummary, setAccessibilitySummary] = useState<any>(null);
   const [accessibilityComments, setAccessibilityComments] = useState<any[]>([]);
   const [accessibilityForm, setAccessibilityForm] =
@@ -231,11 +246,16 @@ export default function DetailsScreen() {
   const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
 
   useEffect(() => {
+    setCheckedIn(false);
+    setCheckInStats(null);
+
     fetchPlaceDetails();
     fetchReviews();
     fetchAccessibilitySummary();
     fetchMyAccessibilityReview();
-  }, [placeId]);
+    fetchCheckInStatus();
+    fetchMyCheckInStats();
+  }, [placeId, token]);
 
   async function fetchPlaceDetails() {
     try {
@@ -413,6 +433,92 @@ export default function DetailsScreen() {
       setEvents([]);
     } finally {
       setEventsLoading(false);
+    }
+  }
+
+  async function fetchCheckInStatus() {
+    try {
+      if (!user || !token) {
+        setCheckedIn(false);
+        return;
+      }
+
+      const response = await api.get(`/checkins/status/${placeId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      setCheckedIn(!!response.data.checkedIn);
+    } catch (error: any) {
+      console.log('Erro ao verificar check-in:', error?.message);
+    }
+  }
+
+  async function fetchMyCheckInStats() {
+    try {
+      if (!user || !token) {
+        setCheckInStats(null);
+        return;
+      }
+
+      const response = await api.get('/checkins/me', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      setCheckInStats(response.data.stats || null);
+    } catch (error: any) {
+      console.log('Erro ao buscar meus check-ins:', error?.message);
+    }
+  }
+
+  async function handleCheckIn() {
+    try {
+      if (!user || !token) {
+        Alert.alert(
+          translate('common.attention', 'Atenção'),
+          translate('details.mustLoginCheckIn', 'Você precisa estar logado para fazer check-in.')
+        );
+        return;
+      }
+
+      setCheckInLoading(true);
+
+      const response = await api.post(
+        '/checkins',
+        {
+          placeId,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      setCheckedIn(true);
+
+      if (response.data.stats) {
+        setCheckInStats(response.data.stats);
+      }
+
+      const message = response.data.alreadyCheckedIn
+        ? translate('details.alreadyCheckedIn', 'Você já fez check-in neste local.')
+        : translate('details.checkInSuccess', 'Check-in realizado com sucesso.');
+
+      Alert.alert(translate('common.success', 'Sucesso'), message);
+    } catch (error: any) {
+      console.log('Erro ao fazer check-in:', error?.response?.data || error?.message);
+
+      Alert.alert(
+        translate('common.error', 'Erro'),
+        error?.response?.data?.message ||
+        translate('details.checkInError', 'Não foi possível realizar o check-in.')
+      );
+    } finally {
+      setCheckInLoading(false);
     }
   }
 
@@ -900,6 +1006,86 @@ export default function DetailsScreen() {
     }
   }
 
+
+  async function handleAddToItinerary() {
+    try {
+      if (!user || !token) {
+        Alert.alert(
+          translate('common.attention', 'Atenção'),
+          translate(
+            'details.mustLoginItinerary',
+            'Você precisa estar logado para adicionar locais ao roteiro.'
+          )
+        );
+        return;
+      }
+
+      if (!place?._id) {
+        Alert.alert(
+          translate('common.error', 'Erro'),
+          translate('details.placeNotFound', 'Local não encontrado.')
+        );
+        return;
+      }
+
+      const currentResponse = await api.get('/itineraries/current', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const itineraryId = currentResponse.data?._id;
+
+      if (!itineraryId) {
+        Alert.alert(
+          translate('common.error', 'Erro'),
+          translate(
+            'details.itineraryNotFound',
+            'Não foi possível encontrar seu roteiro.'
+          )
+        );
+        return;
+      }
+
+      await api.post(
+        `/itineraries/${itineraryId}/places`,
+        {
+          placeId: place._id,
+          day: 1,
+          time: '',
+          notes: '',
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      Alert.alert(
+        translate('common.success', 'Sucesso'),
+        translate(
+          'details.addedToItinerary',
+          'Local adicionado ao seu roteiro.'
+        )
+      );
+    } catch (error: any) {
+      console.log(
+        'Erro ao adicionar ao roteiro:',
+        error?.response?.data || error?.message
+      );
+
+      const message =
+        error?.response?.data?.message ||
+        translate(
+          'details.addToItineraryError',
+          'Não foi possível adicionar este local ao roteiro.'
+        );
+
+      Alert.alert(translate('common.error', 'Erro'), message);
+    }
+  }
+
   async function handleSharePlace() {
     if (!place) return;
 
@@ -910,9 +1096,9 @@ export default function DetailsScreen() {
         title: `Conheça ${place.name}`,
         message: `Confira ${place.name} no Turistando!
 
-${place.address}
+  ${place.address}
 
-Abrir no app: ${deepLink}`,
+  Abrir no app: ${deepLink}`,
         url: deepLink,
       });
     } catch (error: any) {
@@ -1113,6 +1299,103 @@ Abrir no app: ${deepLink}`,
           <Text style={styles.rating}>{translate('results.noReviews', 'Ainda sem avaliações')}</Text>
         )}
 
+        <View style={styles.checkInCard}>
+          <View style={styles.checkInTop}>
+            <View style={styles.checkInIconBox}>
+              <Ionicons
+                name={checkedIn ? 'checkmark-circle' : 'location-outline'}
+                size={24}
+                color={checkedIn ? '#16A34A' : '#2563EB'}
+              />
+            </View>
+
+            <View style={styles.checkInInfo}>
+              <Text style={styles.checkInTitle}>
+                {checkedIn
+                  ? translate('details.checkedInTitle', 'Você já visitou este local')
+                  : translate('details.checkInTitle', 'Registrar visita')}
+              </Text>
+
+              <Text style={styles.checkInDescription}>
+                {checkedIn
+                  ? translate('details.checkedInDescription', 'Seu check-in está salvo na sua conta.')
+                  : translate('details.checkInDescription', 'Faça check-in e acumule pontos no Turistando.')}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.checkInStatsRow}>
+            <View style={styles.checkInStatusItem}>
+              <Ionicons
+                name={checkedIn ? 'checkmark-circle' : 'ellipse-outline'}
+                size={22}
+                color={checkedIn ? '#16A34A' : '#64748B'}
+              />
+
+              <Text
+                style={[
+                  styles.checkInStatusText,
+                  checkedIn && styles.checkInStatusTextDone,
+                ]}
+              >
+                {checkedIn
+                  ? translate('details.localVisited', 'Local visitado')
+                  : translate('details.localNotVisited', 'Local não visitado')}
+              </Text>
+            </View>
+
+            <View style={styles.checkInDivider} />
+
+            <View style={styles.checkInStatItem}>
+              <Text style={styles.checkInStatValue}>
+                {checkInStats?.points || 0}
+              </Text>
+              <Text style={styles.checkInStatLabel}>
+                {translate('details.myPoints', 'meus pontos')}
+              </Text>
+            </View>
+          </View>
+
+          {checkedIn && checkInStats?.badge ? (
+            <View style={styles.badgeBox}>
+              <Ionicons name="ribbon-outline" size={18} color="#D97706" />
+              <View style={styles.badgeTextWrapper}>
+                <Text style={styles.badgeTitle}>{checkInStats.badge.title}</Text>
+                <Text style={styles.badgeDescription}>
+                  {checkInStats.badge.description}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          <TouchableOpacity
+            style={[
+              styles.checkInButton,
+              checkedIn && styles.checkInButtonDone,
+            ]}
+            activeOpacity={0.8}
+            onPress={handleCheckIn}
+            disabled={checkInLoading}
+          >
+            {checkInLoading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <Ionicons
+                  name={checkedIn ? 'checkmark-circle-outline' : 'pin-outline'}
+                  size={20}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.checkInButtonText}>
+                  {checkedIn
+                    ? translate('details.checkInDone', 'Check-in feito')
+                    : translate('details.doCheckIn', 'Fazer check-in')}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+
         <Text style={styles.description}>{place.description}</Text>
 
         <View style={styles.addressCard}>
@@ -1141,6 +1424,17 @@ Abrir no app: ${deepLink}`,
               <Text style={styles.mapButtonText}>{translate('results.routes', 'Ver rotas')}</Text>
             </TouchableOpacity>
           </View>
+
+          <TouchableOpacity
+            style={styles.itineraryButton}
+            activeOpacity={0.85}
+            onPress={handleAddToItinerary}
+          >
+            <Ionicons name="calendar-outline" size={20} color="#FFFFFF" />
+            <Text style={styles.itineraryButtonText}>
+              {translate('details.addToItinerary', 'Adicionar ao roteiro')}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         <AccordionSection
@@ -1880,6 +2174,115 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 16,
   },
+  checkInCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 16,
+  },
+  checkInTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 14,
+  },
+  checkInIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkInInfo: {
+    flex: 1,
+  },
+  checkInTitle: {
+    fontSize: 16,
+    color: '#0F172A',
+    fontWeight: '900',
+    marginBottom: 3,
+  },
+  checkInDescription: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  checkInStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingVertical: 12,
+    marginBottom: 12,
+  },
+  checkInStatItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  checkInStatValue: {
+    fontSize: 20,
+    color: '#0F172A',
+    fontWeight: '900',
+    marginBottom: 2,
+  },
+  checkInStatLabel: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  checkInDivider: {
+    width: 1,
+    height: 34,
+    backgroundColor: '#E2E8F0',
+  },
+  badgeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 14,
+    padding: 10,
+    marginBottom: 12,
+  },
+  badgeTextWrapper: {
+    flex: 1,
+  },
+  badgeTitle: {
+    fontSize: 13,
+    color: '#92400E',
+    fontWeight: '900',
+    marginBottom: 2,
+  },
+  badgeDescription: {
+    fontSize: 12,
+    color: '#B45309',
+    fontWeight: '600',
+    lineHeight: 17,
+  },
+  checkInButton: {
+    minHeight: 48,
+    borderRadius: 14,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  checkInButtonDone: {
+    backgroundColor: '#16A34A',
+  },
+  checkInButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+  },
   addressCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
@@ -1942,6 +2345,21 @@ const styles = StyleSheet.create({
   mapButtonText: {
     color: '#FFFFFF',
     fontWeight: '700',
+    fontSize: 14,
+  },
+  itineraryButton: {
+    marginTop: 12,
+    minHeight: 50,
+    borderRadius: 14,
+    backgroundColor: '#1E3A8A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  itineraryButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
     fontSize: 14,
   },
   accordionCard: {
@@ -2462,5 +2880,22 @@ const styles = StyleSheet.create({
     color: '#DC2626',
     fontWeight: '800',
     fontSize: 13,
+  },
+  checkInStatusItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 8,
+  },
+  checkInStatusText: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  checkInStatusTextDone: {
+    color: '#16A34A',
   },
 });
