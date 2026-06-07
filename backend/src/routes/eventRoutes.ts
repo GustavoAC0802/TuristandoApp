@@ -2,6 +2,7 @@ import { Router } from "express";
 
 import {
   getEvents,
+  getNearbyEvents,
   getEventById,
   createEvent,
   deleteEvent,
@@ -12,6 +13,7 @@ import { auth } from "../middlewares/Auth";
 const router = Router();
 
 router.get("/", getEvents);
+router.get("/nearby", getNearbyEvents);
 router.get("/:id", getEventById);
 
 router.post("/", auth, createEvent);

@@ -16,7 +16,7 @@ import { useTranslation } from 'react-i18next';
 
 import type { RootState } from '../store';
 import { logout } from '../slices/authSlice';
-import { setTheme } from '../slices/themeSlice';
+import { setTheme, type ThemePreference } from '../slices/themeSlice';
 import {
   clearSession,
   getBiometricEnabled,
@@ -24,7 +24,6 @@ import {
 } from '../services/SecureStorage';
 
 type Language = 'pt' | 'en' | 'es';
-type ThemeMode = 'light' | 'dark';
 
 const STORAGE_KEYS = {
   language: 'turistando_app_language',
@@ -37,6 +36,7 @@ export default function ProfileScreen() {
 
   const user = useSelector((state: RootState) => state.auth.user);
   const currentTheme = useSelector((state: RootState) => state.theme.mode);
+  const themePreference = useSelector((state: RootState) => state.theme.preference);
 
   const email = user?.email || 'email@exemplo.com';
   const name = user?.name || t('profile.defaultUserName');
@@ -64,7 +64,7 @@ export default function ProfileScreen() {
         await i18n.changeLanguage(languageValue);
       }
 
-      if (themeValue === 'light' || themeValue === 'dark') {
+      if (themeValue === 'light' || themeValue === 'dark' || themeValue === 'auto') {
         dispatch(setTheme(themeValue));
       }
     } catch (error) {
@@ -114,9 +114,12 @@ export default function ProfileScreen() {
       setLanguageState(value);
       await AsyncStorage.setItem(STORAGE_KEYS.language, value);
       await i18n.changeLanguage(value);
+
       Alert.alert(
         t('profile.language.title'),
-        t('profile.alerts.languageChanged', { language: getLanguageLabel(value, t) })
+        t('profile.alerts.languageChanged', {
+          language: getLanguageLabel(value, t),
+        })
       );
     } catch (error) {
       console.error('Erro ao salvar idioma:', error);
@@ -124,14 +127,15 @@ export default function ProfileScreen() {
     }
   }
 
-  async function handleThemeChange(value: ThemeMode) {
+  async function handleThemeChange(value: ThemePreference) {
     try {
       dispatch(setTheme(value));
       await AsyncStorage.setItem(STORAGE_KEYS.theme, value);
+
       Alert.alert(
         t('profile.theme.title'),
         t('profile.alerts.themeChanged', {
-          theme: value === 'light' ? t('profile.theme.light') : t('profile.theme.dark'),
+          theme: getThemeLabel(value, t),
         })
       );
     } catch (error) {
@@ -173,8 +177,13 @@ export default function ProfileScreen() {
             <Text style={styles.avatarText}>{initials}</Text>
           </View>
 
-          <Text style={[styles.name, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>{name}</Text>
-          <Text style={[styles.email, { color: isDark ? '#CBD5E1' : '#64748B' }]}>{email}</Text>
+          <Text style={[styles.name, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+            {name}
+          </Text>
+
+          <Text style={[styles.email, { color: isDark ? '#CBD5E1' : '#64748B' }]}>
+            {email}
+          </Text>
         </View>
 
         <View
@@ -195,6 +204,7 @@ export default function ProfileScreen() {
               <Text style={[styles.preferenceTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
                 {t('profile.biometrics.loginWithBiometrics')}
               </Text>
+
               <Text
                 style={[
                   styles.preferenceSubtitle,
@@ -225,12 +235,14 @@ export default function ProfileScreen() {
                 isDark={isDark}
                 onPress={() => handleLanguageChange('pt')}
               />
+
               <OptionButton
                 label={t('profile.language.english')}
                 active={language === 'en'}
                 isDark={isDark}
                 onPress={() => handleLanguageChange('en')}
               />
+
               <OptionButton
                 label={t('profile.language.spanish')}
                 active={language === 'es'}
@@ -245,18 +257,37 @@ export default function ProfileScreen() {
               {t('profile.theme.title')}
             </Text>
 
+            <Text
+              style={[
+                styles.preferenceSubtitle,
+                { color: isDark ? '#CBD5E1' : '#64748B' },
+              ]}
+            >
+              {themePreference === 'auto'
+                ? 'O app alterna o tema automaticamente conforme a luminosidade.'
+                : 'Escolha o tema visual do aplicativo.'}
+            </Text>
+
             <View style={styles.optionRow}>
               <OptionButton
                 label={t('profile.theme.light')}
-                active={currentTheme === 'light'}
+                active={themePreference === 'light'}
                 isDark={isDark}
                 onPress={() => handleThemeChange('light')}
               />
+
               <OptionButton
                 label={t('profile.theme.dark')}
-                active={currentTheme === 'dark'}
+                active={themePreference === 'dark'}
                 isDark={isDark}
                 onPress={() => handleThemeChange('dark')}
+              />
+
+              <OptionButton
+                label={getThemeLabel('auto', t)}
+                active={themePreference === 'auto'}
+                isDark={isDark}
+                onPress={() => handleThemeChange('auto')}
               />
             </View>
           </View>
@@ -316,13 +347,17 @@ function getInitials(name: string) {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
-function getLanguageLabel(
-  language: Language,
-  t: (key: string) => string
-) {
+function getLanguageLabel(language: Language, t: (key: string) => string) {
   if (language === 'pt') return t('profile.language.portuguese');
   if (language === 'en') return t('profile.language.english');
   return t('profile.language.spanish');
+}
+
+function getThemeLabel(theme: ThemePreference, t: (key: string) => string) {
+  if (theme === 'light') return t('profile.theme.light');
+  if (theme === 'dark') return t('profile.theme.dark');
+
+  return 'Automático';
 }
 
 const styles = StyleSheet.create({

@@ -1,6 +1,9 @@
 import React from 'react';
 import { Image, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useSelector } from 'react-redux';
+
+import type { RootState } from '../store';
 
 import HomeScreen from '../screens/Home';
 import ProfileScreen from '../screens/Profile';
@@ -15,21 +18,60 @@ import ProfileIcon from '../assets/images/Profile.png';
 const Tab = createBottomTabNavigator();
 
 export default function MainTabs() {
+  const theme = useSelector((state: RootState) => state.theme.mode);
+  const isDark = theme === 'dark';
+
+  const tabBarBackground = isDark ? '#0F172A' : '#FFFFFF';
+  const tabBarBorder = isDark ? '#334155' : '#CBD5E1';
+  const activeIcon = isDark ? '#60A5FA' : '#1E3A8A';
+  const inactiveIcon = isDark ? '#94A3B8' : '#64748B';
+
+  function renderIcon(source: number, focused: boolean) {
+    return (
+      <Image
+        source={source}
+        style={[
+          styles.icon,
+          {
+            tintColor: focused ? activeIcon : inactiveIcon,
+            opacity: focused ? 1 : 0.75,
+          },
+        ]}
+        resizeMode="contain"
+      />
+    );
+  }
+
   return (
     <Tab.Navigator
+      key={theme}
       screenOptions={{
         headerShown: false,
         tabBarShowLabel: false,
+        tabBarActiveTintColor: activeIcon,
+        tabBarInactiveTintColor: inactiveIcon,
         tabBarStyle: {
           height: 72,
           paddingTop: 6,
           paddingBottom: 10,
           borderTopWidth: 1,
-          borderTopColor: '#94A3B8',
+          borderTopColor: tabBarBorder,
+          backgroundColor: tabBarBackground,
+          elevation: 12,
+          shadowColor: '#000000',
+          shadowOpacity: isDark ? 0.35 : 0.12,
+          shadowRadius: 8,
+          shadowOffset: {
+            width: 0,
+            height: -2,
+          },
         },
         tabBarItemStyle: {
           justifyContent: 'center',
           alignItems: 'center',
+        },
+        sceneStyle: {
+          backgroundColor: isDark ? '#0F172A' : '#FFFFFF',
         },
       }}
     >
@@ -37,19 +79,7 @@ export default function MainTabs() {
         name="HomeTab"
         component={HomeScreen}
         options={{
-          tabBarIcon: ({ focused }) => (
-            <Image
-              source={HomeIcon}
-              style={[
-                styles.icon,
-                {
-                  tintColor: focused ? '#1E3A8A' : '#94A3B8',
-                  opacity: focused ? 1 : 0.7,
-                },
-              ]}
-              resizeMode="contain"
-            />
-          ),
+          tabBarIcon: ({ focused }) => renderIcon(HomeIcon, focused),
         }}
       />
 
@@ -57,19 +87,7 @@ export default function MainTabs() {
         name="ItineraryTab"
         component={ItineraryScreen}
         options={{
-          tabBarIcon: ({ focused }) => (
-            <Image
-              source={ExploreIcon}
-              style={[
-                styles.icon,
-                {
-                  tintColor: focused ? '#1E3A8A' : '#94A3B8',
-                  opacity: focused ? 1 : 0.7,
-                },
-              ]}
-              resizeMode="contain"
-            />
-          ),
+          tabBarIcon: ({ focused }) => renderIcon(ExploreIcon, focused),
         }}
       />
 
@@ -77,19 +95,7 @@ export default function MainTabs() {
         name="FavoritesTab"
         component={FavoritesScreen}
         options={{
-          tabBarIcon: ({ focused }) => (
-            <Image
-              source={FavoritesIcon}
-              style={[
-                styles.icon,
-                {
-                  tintColor: focused ? '#1E3A8A' : '#94A3B8',
-                  opacity: focused ? 1 : 0.7,
-                },
-              ]}
-              resizeMode="contain"
-            />
-          ),
+          tabBarIcon: ({ focused }) => renderIcon(FavoritesIcon, focused),
         }}
       />
 
@@ -97,19 +103,7 @@ export default function MainTabs() {
         name="ProfileTab"
         component={ProfileScreen}
         options={{
-          tabBarIcon: ({ focused }) => (
-            <Image
-              source={ProfileIcon}
-              style={[
-                styles.icon,
-                {
-                  tintColor: focused ? '#1E3A8A' : '#94A3B8',
-                  opacity: focused ? 1 : 0.7,
-                },
-              ]}
-              resizeMode="contain"
-            />
-          ),
+          tabBarIcon: ({ focused }) => renderIcon(ProfileIcon, focused),
         }}
       />
     </Tab.Navigator>

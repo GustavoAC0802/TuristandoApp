@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from "react";
 import {
   StyleSheet,
   View,
@@ -10,46 +10,58 @@ import {
   Keyboard,
   Image,
   Linking,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import MapView, { Marker, Region } from 'react-native-maps';
-import * as Location from 'expo-location';
-import { useDispatch, useSelector } from 'react-redux';
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location";
+import * as Speech from "expo-speech";
+import { useDispatch, useSelector } from "react-redux";
 import {
   useNavigation,
   useRoute,
   useFocusEffect,
-} from '@react-navigation/native';
-import { useTranslation } from 'react-i18next';
+} from "@react-navigation/native";
+import { useTranslation } from "react-i18next";
 
-import api from '../services/api';
-import { searchPlaces } from '../slices/placesSlice';
-import type { RootState } from '../store';
-import { setSearchText } from '../slices/searchSlice';
-import FilterIcon from '../assets/images/Filter.png';
+import api from "../services/api";
+import { searchPlaces } from "../slices/placesSlice";
+import type { RootState } from "../store";
+import { setSearchText } from "../slices/searchSlice";
+import FilterIcon from "../assets/images/Filter.png";
+import OpenStreetMapView from "../components/OpenStreetMapView";
 
 import {
   getSearchHistory,
   addSearchHistory,
   clearSearchHistory,
-} from '../services/historyStorage';
-import i18n from '../i18n';
+} from "../services/historyStorage";
+import i18n from "../i18n";
 
 const FALLBACK_IMAGE =
-  'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/No_image_available.svg/480px-No_image_available.svg.png';
+  "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/No_image_available.svg/480px-No_image_available.svg.png";
+
+type MapRegion = {
+  latitude: number;
+  longitude: number;
+  latitudeDelta: number;
+  longitudeDelta: number;
+};
 
 type SelectedPlace = {
   _id: string;
   name: string;
   city?: string;
   address?: string;
+  description?: string;
+  openingHours?: string;
+  categories?: string[];
   images?: string[];
+  image?: string;
   averageRating?: number;
   reviewsCount?: number;
   location?: {
-    type: string;
-    coordinates: number[];
+    type?: string;
+    coordinates?: number[];
   };
 };
 
@@ -60,7 +72,7 @@ type CurrentWeather = {
 };
 
 export default function HomeScreen() {
-  const [region, setRegion] = useState<Region | null>(null);
+  const [region, setRegion] = useState<MapRegion | null>(null);
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
     longitude: number;
@@ -68,12 +80,18 @@ export default function HomeScreen() {
 
   const [cardImageError, setCardImageError] = useState(false);
   const [currentWeather, setCurrentWeather] = useState<CurrentWeather | null>(
-    null
+    null,
   );
 
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [showSearchHistory, setShowSearchHistory] = useState(false);
   const [nearMeLoading, setNearMeLoading] = useState(false);
+  const [walkingGuideActive, setWalkingGuideActive] = useState(false);
+
+  const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(
+    null,
+  );
+  const spokenPlaceIdsRef = useRef<Set<string>>(new Set());
 
   const dispatch = useDispatch();
   const navigation = useNavigation<any>();
@@ -84,18 +102,22 @@ export default function HomeScreen() {
   const theme = useSelector((state: RootState) => state.theme.mode);
 
   const selectedPlace: SelectedPlace | undefined = route.params?.selectedPlace;
-  const isDark = theme === 'dark';
+  const isDark = theme === "dark";
 
   useEffect(() => {
     loadLocation();
     loadSearchHistory();
+
+    return () => {
+      stopWalkingGuide();
+    };
   }, []);
 
   useFocusEffect(
     React.useCallback(() => {
       setShowSearchHistory(false);
       return () => {};
-    }, [])
+    }, []),
   );
 
   useEffect(() => {
@@ -125,7 +147,7 @@ export default function HomeScreen() {
 
   async function fetchCurrentWeather(city: string) {
     try {
-      const response = await api.get('/weather', {
+      const response = await api.get("/weather", {
         params: {
           city,
           lang: i18n.language,
@@ -134,18 +156,198 @@ export default function HomeScreen() {
 
       setCurrentWeather(response.data);
     } catch (error: any) {
-      console.log('Erro ao buscar clima atual na Home:', error?.message);
+      console.log("Erro ao buscar clima atual na Home:", error?.message);
     }
+  }
+
+  function normalizePlacesResponse(data: any): SelectedPlace[] {
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.places)) return data.places;
+    if (Array.isArray(data?.data)) return data.data;
+    if (Array.isArray(data?.docs)) return data.docs;
+    return [];
+  }
+
+  function calculateDistanceInMeters(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+  ) {
+    const earthRadius = 6371000;
+    const toRadians = (value: number) => (value * Math.PI) / 180;
+
+    const dLat = toRadians(lat2 - lat1);
+    const dLon = toRadians(lon2 - lon1);
+
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRadians(lat1)) *
+        Math.cos(toRadians(lat2)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return earthRadius * c;
+  }
+
+  function getGuideText(place: SelectedPlace) {
+    const categories = place.categories?.length
+      ? place.categories
+          .map((cat) => t(`categories.${cat.toLowerCase()}`, cat))
+          .join(", ")
+      : "";
+
+    return `
+      Você está próximo de ${place.name}.
+      ${
+        place.description ||
+        "Este é um ponto turístico cadastrado no Turistando."
+      }
+      ${place.address ? `Endereço: ${place.address}.` : ""}
+      ${place.city ? `Cidade: ${place.city}.` : ""}
+      ${place.openingHours ? `Horário de funcionamento: ${place.openingHours}.` : ""}
+      ${categories ? `Categorias: ${categories}.` : ""}
+    `;
+  }
+
+  async function checkNearbyPlacesAndSpeak(
+    latitude: number,
+    longitude: number,
+    placesList: SelectedPlace[],
+  ) {
+    const nearbyPlace = placesList.find((item) => {
+      if (!item._id || !item.location?.coordinates?.length) return false;
+      if (spokenPlaceIdsRef.current.has(item._id)) return false;
+
+      const [placeLongitude, placeLatitude] = item.location.coordinates;
+
+      if (
+        typeof placeLatitude !== "number" ||
+        typeof placeLongitude !== "number"
+      ) {
+        return false;
+      }
+
+      const distance = calculateDistanceInMeters(
+        latitude,
+        longitude,
+        placeLatitude,
+        placeLongitude,
+      );
+
+      return distance <= 120;
+    });
+
+    if (!nearbyPlace) return;
+
+    const isSpeaking = await Speech.isSpeakingAsync();
+    if (isSpeaking) return;
+
+    spokenPlaceIdsRef.current.add(nearbyPlace._id);
+
+    Speech.speak(getGuideText(nearbyPlace), {
+      language:
+        i18n.language === "en"
+          ? "en-US"
+          : i18n.language === "es"
+            ? "es-ES"
+            : "pt-BR",
+      rate: 0.9,
+      pitch: 1,
+    });
+  }
+
+  async function startWalkingGuide(initialCoords?: {
+    latitude: number;
+    longitude: number;
+  }) {
+    try {
+      if (locationSubscriptionRef.current) return;
+
+      const response = await api.get("/places");
+      const placesList = normalizePlacesResponse(response.data).filter(
+        (item) => item.location?.coordinates?.length,
+      );
+
+      if (!placesList.length) {
+        console.log("Guia de voz: nenhum local encontrado para monitorar.");
+        return;
+      }
+
+      if (initialCoords) {
+        checkNearbyPlacesAndSpeak(
+          initialCoords.latitude,
+          initialCoords.longitude,
+          placesList,
+        );
+      }
+
+      const subscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High,
+          distanceInterval: 20,
+          timeInterval: 5000,
+        },
+        (location) => {
+          const coords = {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+          };
+
+          setUserLocation(coords);
+          checkNearbyPlacesAndSpeak(
+            coords.latitude,
+            coords.longitude,
+            placesList,
+          );
+        },
+      );
+
+      locationSubscriptionRef.current = subscription;
+      setWalkingGuideActive(true);
+    } catch (error: any) {
+      console.log("Erro ao iniciar guia de voz automático:", error?.message);
+    }
+  }
+
+  function stopWalkingGuide() {
+    if (locationSubscriptionRef.current) {
+      locationSubscriptionRef.current.remove();
+      locationSubscriptionRef.current = null;
+    }
+
+    Speech.stop();
+    setWalkingGuideActive(false);
+  }
+
+  function handleToggleWalkingGuide() {
+    if (walkingGuideActive) {
+      stopWalkingGuide();
+      return;
+    }
+
+    const coords = userLocation
+      ? userLocation
+      : region
+        ? {
+            latitude: region.latitude,
+            longitude: region.longitude,
+          }
+        : undefined;
+
+    startWalkingGuide(coords);
   }
 
   async function loadLocation() {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
 
-      if (status !== 'granted') {
+      if (status !== "granted") {
         Alert.alert(
-          t('home.alerts.permissionDeniedTitle'),
-          t('home.alerts.permissionDeniedMessage')
+          t("home.alerts.permissionDeniedTitle"),
+          t("home.alerts.permissionDeniedMessage"),
         );
         return;
       }
@@ -158,6 +360,7 @@ export default function HomeScreen() {
       };
 
       setUserLocation(currentCoords);
+      startWalkingGuide(currentCoords);
 
       if (!selectedPlace) {
         setRegion({
@@ -167,7 +370,7 @@ export default function HomeScreen() {
         });
       }
     } catch {
-      Alert.alert(t('common.error'), t('home.alerts.locationError'));
+      Alert.alert(t("common.error"), t("home.alerts.locationError"));
     }
   }
 
@@ -176,26 +379,25 @@ export default function HomeScreen() {
     const averageRating = Math.min(Number(place?.averageRating || 0), 5);
 
     if (reviewsCount <= 0) {
-      return t('results.noReviews');
+      return t("results.noReviews");
     }
 
     return `⭐ ${averageRating.toFixed(1)} • ${reviewsCount} ${t(
-      'details.reviews'
+      "details.reviews",
     )}`;
   }
 
   function handleOpenFilters() {
-    navigation.navigate('Filters');
+    navigation.navigate("Filters");
   }
 
   function handleOpenRecommendations() {
-    navigation.navigate('Recommendations');
+    navigation.navigate("Recommendations");
   }
 
   function handleOpenUsefulPhrases() {
-    navigation.navigate('UsefulPhrases');
+    navigation.navigate("UsefulPhrases");
   }
-
 
   async function handleSearch() {
     Keyboard.dismiss();
@@ -204,8 +406,8 @@ export default function HomeScreen() {
 
     if (!trimmedSearch) {
       Alert.alert(
-        t('home.alerts.emptySearchTitle'),
-        t('home.alerts.emptySearchMessage')
+        t("home.alerts.emptySearchTitle"),
+        t("home.alerts.emptySearchMessage"),
       );
       return;
     }
@@ -222,12 +424,12 @@ export default function HomeScreen() {
           search: trimmedSearch,
           userLat: userLocation?.latitude ?? region.latitude,
           userLng: userLocation?.longitude ?? region.longitude,
-        }) as any
+        }) as any,
       );
 
-      navigation.navigate('Results');
+      navigation.navigate("Results");
     } catch {
-      Alert.alert(t('common.error'), t('results.searchError'));
+      Alert.alert(t("common.error"), t("results.searchError"));
     }
   }
 
@@ -243,10 +445,10 @@ export default function HomeScreen() {
       if (!coords) {
         const { status } = await Location.requestForegroundPermissionsAsync();
 
-        if (status !== 'granted') {
+        if (status !== "granted") {
           Alert.alert(
-            t('home.alerts.permissionDeniedTitle'),
-            t('home.alerts.permissionDeniedMessage')
+            t("home.alerts.permissionDeniedTitle"),
+            t("home.alerts.permissionDeniedMessage"),
           );
           return;
         }
@@ -259,6 +461,7 @@ export default function HomeScreen() {
         };
 
         setUserLocation(coords);
+        startWalkingGuide(coords);
       }
 
       setRegion({
@@ -270,19 +473,19 @@ export default function HomeScreen() {
 
       await dispatch(
         searchPlaces({
-          search: '',
-          sortBy: 'distance',
+          search: "",
+          sortBy: "distance",
           userLat: coords.latitude,
           userLng: coords.longitude,
-        }) as any
+        }) as any,
       );
 
-      navigation.navigate('Results', {
-        mode: 'nearMe',
-        title: t('results.nearMeTitle'),
+      navigation.navigate("Results", {
+        mode: "nearMe",
+        title: t("results.nearMeTitle"),
       });
     } catch {
-      Alert.alert(t('common.error'), t('results.searchError'));
+      Alert.alert(t("common.error"), t("results.searchError"));
     } finally {
       setNearMeLoading(false);
     }
@@ -304,12 +507,12 @@ export default function HomeScreen() {
           search: item,
           userLat: userLocation?.latitude ?? region.latitude,
           userLng: userLocation?.longitude ?? region.longitude,
-        }) as any
+        }) as any,
       );
 
-      navigation.navigate('Results');
+      navigation.navigate("Results");
     } catch {
-      Alert.alert(t('common.error'), 'Erro ao buscar locais');
+      Alert.alert(t("common.error"), "Erro ao buscar locais");
     }
   }
 
@@ -322,11 +525,6 @@ export default function HomeScreen() {
   function openRouteToCoords(latitude: number, longitude: number) {
     const url = `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
     Linking.openURL(url);
-  }
-
-  function handleMapPress(event: any) {
-    const { latitude, longitude } = event.nativeEvent.coordinate;
-    openRouteToCoords(latitude, longitude);
   }
 
   function handleSelectedPlaceRoute() {
@@ -348,32 +546,43 @@ export default function HomeScreen() {
   function handleOpenDetails() {
     if (!selectedPlace?._id) return;
 
-    navigation.navigate('Details', {
+    navigation.navigate("Details", {
       placeId: selectedPlace._id,
-      from: 'home',
+      from: "home",
     });
   }
 
-  const selectedPlaceCoordinates = selectedPlace?.location?.coordinates
-    ? {
-        latitude: selectedPlace.location.coordinates[1],
-        longitude: selectedPlace.location.coordinates[0],
-      }
-    : null;
+  function handleOpenStreetMapSelect(place: SelectedPlace) {
+    navigation.setParams({
+      selectedPlace: {
+        ...place,
+        location: {
+          type: place.location?.type || "Point",
+          coordinates: place.location?.coordinates || [],
+        },
+      },
+    });
+
+    if (place.city) {
+      fetchCurrentWeather(place.city);
+    }
+  }
 
   const selectedPlaceImage =
     !cardImageError &&
     selectedPlace?.images?.[0] &&
-    selectedPlace.images[0].startsWith('https://')
+    selectedPlace.images[0].startsWith("https://")
       ? selectedPlace.images[0]
       : FALLBACK_IMAGE;
+
+  const mapPlaces = selectedPlace ? [selectedPlace] : [];
 
   if (!region) {
     return (
       <View
         style={[
           styles.loadingContainer,
-          { backgroundColor: isDark ? '#0F172A' : '#F8FAFC' },
+          { backgroundColor: isDark ? "#0F172A" : "#F8FAFC" },
         ]}
       >
         <ActivityIndicator size="large" color="#3B82F6" />
@@ -385,9 +594,9 @@ export default function HomeScreen() {
     <SafeAreaView
       style={[
         styles.container,
-        { backgroundColor: isDark ? '#0F172A' : '#F8FAFC' },
+        { backgroundColor: isDark ? "#0F172A" : "#F8FAFC" },
       ]}
-      edges={['top', 'left', 'right']}
+      edges={["top", "left", "right"]}
     >
       <View style={styles.content}>
         <View style={styles.searchArea}>
@@ -396,8 +605,8 @@ export default function HomeScreen() {
               style={[
                 styles.iconButton,
                 {
-                  backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
-                  borderColor: isDark ? '#334155' : '#CBD5E1',
+                  backgroundColor: isDark ? "#1E293B" : "#FFFFFF",
+                  borderColor: isDark ? "#334155" : "#CBD5E1",
                 },
               ]}
               onPress={handleSearch}
@@ -406,7 +615,7 @@ export default function HomeScreen() {
               <Ionicons
                 name="search"
                 size={18}
-                color={isDark ? '#CBD5E1' : '#64748B'}
+                color={isDark ? "#CBD5E1" : "#64748B"}
               />
             </TouchableOpacity>
 
@@ -414,8 +623,8 @@ export default function HomeScreen() {
               style={[
                 styles.iconButton,
                 {
-                  backgroundColor: '#2563EB',
-                  borderColor: '#2563EB',
+                  backgroundColor: "#2563EB",
+                  borderColor: "#2563EB",
                 },
               ]}
               onPress={handleOpenRecommendations}
@@ -428,8 +637,8 @@ export default function HomeScreen() {
               style={[
                 styles.searchBox,
                 {
-                  backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
-                  borderColor: isDark ? '#334155' : '#CBD5E1',
+                  backgroundColor: isDark ? "#1E293B" : "#FFFFFF",
+                  borderColor: isDark ? "#334155" : "#CBD5E1",
                 },
               ]}
             >
@@ -456,11 +665,11 @@ export default function HomeScreen() {
                   }, 150);
                 }}
                 returnKeyType="search"
-                placeholder={t('home.searchPlaceholder')}
-                placeholderTextColor={isDark ? '#CBD5E1' : '#64748B'}
+                placeholder={t("home.searchPlaceholder")}
+                placeholderTextColor={isDark ? "#CBD5E1" : "#64748B"}
                 style={[
                   styles.input,
-                  { color: isDark ? '#FFFFFF' : '#0F172A' },
+                  { color: isDark ? "#FFFFFF" : "#0F172A" },
                 ]}
               />
             </View>
@@ -469,8 +678,8 @@ export default function HomeScreen() {
               style={[
                 styles.iconButton,
                 {
-                  backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
-                  borderColor: isDark ? '#334155' : '#CBD5E1',
+                  backgroundColor: isDark ? "#1E293B" : "#FFFFFF",
+                  borderColor: isDark ? "#334155" : "#CBD5E1",
                 },
               ]}
               onPress={handleOpenFilters}
@@ -480,7 +689,7 @@ export default function HomeScreen() {
                 source={FilterIcon}
                 style={[
                   styles.filterIcon,
-                  { tintColor: isDark ? '#CBD5E1' : '#64748B' },
+                  { tintColor: isDark ? "#CBD5E1" : "#64748B" },
                 ]}
               />
             </TouchableOpacity>
@@ -489,8 +698,8 @@ export default function HomeScreen() {
               style={[
                 styles.iconButton,
                 {
-                  backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
-                  borderColor: isDark ? '#334155' : '#CBD5E1',
+                  backgroundColor: isDark ? "#1E293B" : "#FFFFFF",
+                  borderColor: isDark ? "#334155" : "#CBD5E1",
                 },
               ]}
               onPress={handleNearMe}
@@ -503,7 +712,7 @@ export default function HomeScreen() {
                 <Ionicons
                   name="location"
                   size={19}
-                  color={isDark ? '#CBD5E1' : '#64748B'}
+                  color={isDark ? "#CBD5E1" : "#64748B"}
                 />
               )}
             </TouchableOpacity>
@@ -514,8 +723,8 @@ export default function HomeScreen() {
               style={[
                 styles.historyBox,
                 {
-                  backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
-                  borderColor: isDark ? '#334155' : '#E2E8F0',
+                  backgroundColor: isDark ? "#1E293B" : "#FFFFFF",
+                  borderColor: isDark ? "#334155" : "#E2E8F0",
                 },
               ]}
             >
@@ -523,15 +732,15 @@ export default function HomeScreen() {
                 <Text
                   style={[
                     styles.historyTitle,
-                    { color: isDark ? '#FFFFFF' : '#0F172A' },
+                    { color: isDark ? "#FFFFFF" : "#0F172A" },
                   ]}
                 >
-                  {t('results.viewedRecently')}
+                  {t("results.viewedRecently")}
                 </Text>
 
                 <TouchableOpacity onPress={handleClearHistory}>
                   <Text style={styles.clearHistoryText}>
-                    {t('filters.clear')}
+                    {t("filters.clear")}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -546,14 +755,14 @@ export default function HomeScreen() {
                   <Ionicons
                     name="time-outline"
                     size={16}
-                    color={isDark ? '#CBD5E1' : '#64748B'}
+                    color={isDark ? "#CBD5E1" : "#64748B"}
                   />
 
                   <Text
                     numberOfLines={1}
                     style={[
                       styles.historyItemText,
-                      { color: isDark ? '#CBD5E1' : '#475569' },
+                      { color: isDark ? "#CBD5E1" : "#475569" },
                     ]}
                   >
                     {item}
@@ -567,8 +776,8 @@ export default function HomeScreen() {
             style={[
               styles.translateShortcut,
               {
-                backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
-                borderColor: isDark ? '#334155' : '#E2E8F0',
+                backgroundColor: isDark ? "#1E293B" : "#FFFFFF",
+                borderColor: isDark ? "#334155" : "#E2E8F0",
               },
             ]}
             activeOpacity={0.85}
@@ -578,7 +787,7 @@ export default function HomeScreen() {
               style={[
                 styles.translateIconBox,
                 {
-                  backgroundColor: isDark ? '#172554' : '#DBEAFE',
+                  backgroundColor: isDark ? "#172554" : "#DBEAFE",
                 },
               ]}
             >
@@ -589,7 +798,7 @@ export default function HomeScreen() {
               <Text
                 style={[
                   styles.translateShortcutTitle,
-                  { color: isDark ? '#FFFFFF' : '#0F172A' },
+                  { color: isDark ? "#FFFFFF" : "#0F172A" },
                 ]}
               >
                 Tradutor turístico
@@ -598,7 +807,7 @@ export default function HomeScreen() {
               <Text
                 style={[
                   styles.translateShortcutSubtitle,
-                  { color: isDark ? '#CBD5E1' : '#64748B' },
+                  { color: isDark ? "#CBD5E1" : "#64748B" },
                 ]}
               >
                 Frases úteis em inglês e espanhol
@@ -608,35 +817,79 @@ export default function HomeScreen() {
             <Ionicons
               name="chevron-forward"
               size={20}
-              color={isDark ? '#CBD5E1' : '#94A3B8'}
+              color={isDark ? "#CBD5E1" : "#94A3B8"}
             />
           </TouchableOpacity>
-
         </View>
 
         <View style={styles.mapWrapper}>
-          <MapView
-            style={styles.map}
-            region={region}
-            onPress={handleMapPress}
-            showsUserLocation
+          <OpenStreetMapView
+            places={mapPlaces}
+            selectedPlace={selectedPlace || null}
+            userLocation={userLocation}
+            onSelectPlace={handleOpenStreetMapSelect}
+          />
+
+          {/* GUIA DE VOZ: este controle precisa ficar SEMPRE visível.
+              Não envolver com {walkingGuideActive ? ... : null}. */}
+          <TouchableOpacity
+            style={[
+              styles.walkingGuideBadge,
+              {
+                backgroundColor: isDark
+                  ? "rgba(15, 23, 42, 0.92)"
+                  : "rgba(255, 255, 255, 0.94)",
+                borderColor: walkingGuideActive
+                  ? "#2563EB"
+                  : isDark
+                    ? "#475569"
+                    : "#CBD5E1",
+              },
+            ]}
+            activeOpacity={0.85}
+            onPress={handleToggleWalkingGuide}
           >
-            {selectedPlaceCoordinates ? (
-              <Marker
-                coordinate={selectedPlaceCoordinates}
-                title={selectedPlace?.name}
-                description={selectedPlace?.address}
+            <View
+              style={[
+                styles.walkingGuideIconBox,
+                !walkingGuideActive && styles.walkingGuideIconBoxPaused,
+              ]}
+            >
+              <Ionicons
+                name={walkingGuideActive ? "volume-high-outline" : "pause-outline"}
+                size={17}
+                color="#FFFFFF"
               />
-            ) : null}
-          </MapView>
+            </View>
+
+            <View style={styles.walkingGuideTextBox}>
+              <Text
+                style={[
+                  styles.walkingGuideTitle,
+                  { color: isDark ? "#FFFFFF" : "#0F172A" },
+                ]}
+              >
+                {walkingGuideActive ? "Guia automático" : "Guia pausado"}
+              </Text>
+
+              <Text
+                style={[
+                  styles.walkingGuideSubtitle,
+                  { color: isDark ? "#CBD5E1" : "#64748B" },
+                ]}
+              >
+                {walkingGuideActive ? "Toque para parar" : "Toque para reativar"}
+              </Text>
+            </View>
+          </TouchableOpacity>
 
           {selectedPlace ? (
             <View
               style={[
                 styles.placeCard,
                 {
-                  backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
-                  borderColor: isDark ? '#334155' : '#E2E8F0',
+                  backgroundColor: isDark ? "#1E293B" : "#FFFFFF",
+                  borderColor: isDark ? "#334155" : "#E2E8F0",
                 },
               ]}
             >
@@ -644,8 +897,8 @@ export default function HomeScreen() {
                 style={[
                   styles.closeButton,
                   {
-                    backgroundColor: isDark ? '#0F172A' : '#FFFFFF',
-                    borderColor: isDark ? '#334155' : '#E2E8F0',
+                    backgroundColor: isDark ? "#0F172A" : "#FFFFFF",
+                    borderColor: isDark ? "#334155" : "#E2E8F0",
                   },
                 ]}
                 activeOpacity={0.8}
@@ -654,7 +907,7 @@ export default function HomeScreen() {
                 <Ionicons
                   name="close"
                   size={17}
-                  color={isDark ? '#FFFFFF' : '#0F172A'}
+                  color={isDark ? "#FFFFFF" : "#0F172A"}
                 />
               </TouchableOpacity>
 
@@ -680,11 +933,11 @@ export default function HomeScreen() {
                       styles.weatherBadge,
                       {
                         backgroundColor: isDark
-                          ? 'rgba(15, 23, 42, 0.9)'
-                          : 'rgba(255, 255, 255, 0.92)',
+                          ? "rgba(15, 23, 42, 0.9)"
+                          : "rgba(255, 255, 255, 0.92)",
                         borderColor: isDark
-                          ? 'rgba(255,255,255,0.12)'
-                          : 'rgba(226,232,240,0.95)',
+                          ? "rgba(255,255,255,0.12)"
+                          : "rgba(226,232,240,0.95)",
                       },
                     ]}
                   >
@@ -697,7 +950,7 @@ export default function HomeScreen() {
                       <Text
                         style={[
                           styles.weatherTemp,
-                          { color: isDark ? '#FFFFFF' : '#0F172A' },
+                          { color: isDark ? "#FFFFFF" : "#0F172A" },
                         ]}
                       >
                         {currentWeather.temperature}°
@@ -707,7 +960,7 @@ export default function HomeScreen() {
                         numberOfLines={1}
                         style={[
                           styles.weatherDesc,
-                          { color: isDark ? '#CBD5E1' : '#475569' },
+                          { color: isDark ? "#CBD5E1" : "#475569" },
                         ]}
                       >
                         {currentWeather.description}
@@ -722,7 +975,7 @@ export default function HomeScreen() {
                   numberOfLines={1}
                   style={[
                     styles.placeName,
-                    { color: isDark ? '#FFFFFF' : '#0F172A' },
+                    { color: isDark ? "#FFFFFF" : "#0F172A" },
                   ]}
                 >
                   {selectedPlace.name}
@@ -732,19 +985,19 @@ export default function HomeScreen() {
                   numberOfLines={1}
                   style={[
                     styles.placeAddress,
-                    { color: isDark ? '#CBD5E1' : '#64748B' },
+                    { color: isDark ? "#CBD5E1" : "#64748B" },
                   ]}
                 >
                   {selectedPlace.city ||
                     selectedPlace.address ||
-                    t('details.addressUnavailable', 'Endereço não informado')}
+                    t("details.addressUnavailable", "Endereço não informado")}
                 </Text>
 
                 <Text
                   numberOfLines={1}
                   style={[
                     styles.placeRating,
-                    { color: isDark ? '#CBD5E1' : '#475569' },
+                    { color: isDark ? "#CBD5E1" : "#475569" },
                   ]}
                 >
                   {getRatingText(selectedPlace)}
@@ -755,14 +1008,10 @@ export default function HomeScreen() {
                   activeOpacity={0.8}
                   onPress={handleSelectedPlaceRoute}
                 >
-                  <Ionicons
-                    name="navigate-outline"
-                    size={15}
-                    color="#FFFFFF"
-                  />
+                  <Ionicons name="navigate-outline" size={15} color="#FFFFFF" />
 
                   <Text style={styles.smallRouteButtonText}>
-                    {t('details.routes')}
+                    {t("details.routes")}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -781,8 +1030,8 @@ const styles = StyleSheet.create({
 
   loadingContainer: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   content: {
@@ -797,8 +1046,8 @@ const styles = StyleSheet.create({
   },
 
   searchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
 
@@ -807,14 +1056,14 @@ const styles = StyleSheet.create({
     height: 42,
     borderRadius: 15,
     borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   filterIcon: {
     width: 20,
     height: 20,
-    resizeMode: 'contain',
+    resizeMode: "contain",
   },
 
   searchBox: {
@@ -822,13 +1071,13 @@ const styles = StyleSheet.create({
     height: 42,
     borderRadius: 15,
     borderWidth: 1,
-    justifyContent: 'center',
+    justifyContent: "center",
     paddingHorizontal: 14,
   },
 
   input: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
   },
 
   historyBox: {
@@ -839,26 +1088,26 @@ const styles = StyleSheet.create({
   },
 
   historyHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 8,
   },
 
   historyTitle: {
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: "900",
   },
 
   clearHistoryText: {
     fontSize: 12,
-    fontWeight: '800',
-    color: '#2563EB',
+    fontWeight: "800",
+    color: "#2563EB",
   },
 
   historyItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
     paddingVertical: 8,
   },
@@ -866,7 +1115,7 @@ const styles = StyleSheet.create({
   historyItemText: {
     flex: 1,
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: "700",
   },
 
   translateShortcut: {
@@ -874,9 +1123,9 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    shadowColor: '#000',
+    flexDirection: "row",
+    alignItems: "center",
+    shadowColor: "#000",
     shadowOpacity: 0.07,
     shadowRadius: 6,
     shadowOffset: {
@@ -890,8 +1139,8 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 12,
   },
 
@@ -901,35 +1150,80 @@ const styles = StyleSheet.create({
 
   translateShortcutTitle: {
     fontSize: 15,
-    fontWeight: '900',
+    fontWeight: "900",
   },
 
   translateShortcutSubtitle: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
     marginTop: 2,
   },
 
   mapWrapper: {
     flex: 1,
     borderRadius: 24,
-    overflow: 'hidden',
-    position: 'relative',
+    overflow: "hidden",
+    position: "relative",
+    backgroundColor: "#CBD5E1",
   },
 
-  map: {
+  walkingGuideBadge: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    minHeight: 46,
+    maxWidth: 190,
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5,
+  },
+
+  walkingGuideIconBox: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "#2563EB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  walkingGuideIconBoxPaused: {
+    backgroundColor: "#64748B",
+  },
+
+  walkingGuideTextBox: {
     flex: 1,
   },
 
+  walkingGuideTitle: {
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  walkingGuideSubtitle: {
+    fontSize: 10,
+    fontWeight: "700",
+    marginTop: 1,
+  },
+
   placeCard: {
-    position: 'absolute',
+    position: "absolute",
     left: 14,
     right: 14,
     bottom: 18,
     borderRadius: 22,
     borderWidth: 1,
-    overflow: 'hidden',
-    shadowColor: '#000',
+    overflow: "hidden",
+    shadowColor: "#000",
     shadowOpacity: 0.16,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 8 },
@@ -937,52 +1231,52 @@ const styles = StyleSheet.create({
   },
 
   closeButton: {
-    position: 'absolute',
+    position: "absolute",
     top: 10,
     right: 10,
     width: 34,
     height: 34,
     borderRadius: 17,
     borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     zIndex: 10,
   },
 
   detailsButton: {
-    position: 'absolute',
+    position: "absolute",
     top: 52,
     right: 10,
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#2563EB',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#2563EB",
+    alignItems: "center",
+    justifyContent: "center",
     zIndex: 10,
   },
 
   cardImageWrapper: {
     height: 105,
-    position: 'relative',
-    backgroundColor: '#CBD5E1',
+    position: "relative",
+    backgroundColor: "#CBD5E1",
   },
 
   placeImage: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
 
   weatherBadge: {
-    position: 'absolute',
+    position: "absolute",
     left: 12,
     bottom: 10,
     borderRadius: 14,
     borderWidth: 1,
     paddingHorizontal: 8,
     paddingVertical: 5,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     maxWidth: 145,
   },
 
@@ -994,13 +1288,13 @@ const styles = StyleSheet.create({
 
   weatherTemp: {
     fontSize: 15,
-    fontWeight: '900',
+    fontWeight: "900",
   },
 
   weatherDesc: {
     fontSize: 10,
-    fontWeight: '700',
-    textTransform: 'capitalize',
+    fontWeight: "700",
+    textTransform: "capitalize",
     maxWidth: 88,
   },
 
@@ -1012,38 +1306,38 @@ const styles = StyleSheet.create({
 
   placeName: {
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: "900",
     marginBottom: 4,
   },
 
   placeAddress: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
     marginBottom: 8,
   },
 
   placeRating: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: "700",
   },
 
   smallRouteButton: {
-    position: 'absolute',
+    position: "absolute",
     right: 14,
     bottom: 14,
     height: 36,
     borderRadius: 18,
     paddingHorizontal: 12,
-    backgroundColor: '#2563EB',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
+    backgroundColor: "#2563EB",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
     gap: 5,
   },
 
   smallRouteButtonText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: "800",
   },
 });

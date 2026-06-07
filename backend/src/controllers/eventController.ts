@@ -1,105 +1,206 @@
 import { Request, Response } from "express";
-import Event from "../models/Event";
+import axios from "axios";
+import ngeohash from "ngeohash";
 
-export async function getEvents(req: Request, res: Response) {
-  try {
-    const {
-      city,
-      placeId,
-      category,
-      upcoming = "true",
-    } = req.query;
+type NearbyEvent = {
+  id: string;
+  name: string;
+  description?: string;
+  image?: string;
+  startDate?: string;
+  startTime?: string;
+  dateTime?: string;
+  venueName?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  latitude?: number;
+  longitude?: number;
+  url?: string;
+  source: "ticketmaster";
+};
 
-    const filters: any = {};
-
-    if (city) {
-      filters.city = city;
-    }
-
-    if (placeId) {
-      filters.place = placeId;
-    }
-
-    if (category) {
-      filters.category = category;
-    }
-
-    if (upcoming === "true") {
-      filters.date = {
-        $gte: new Date(),
-      };
-    }
-
-    const events = await Event.find(filters)
-      .sort({ date: 1 })
-      .limit(20);
-
-    return res.status(200).json(events);
-  } catch (error) {
-    console.log("Erro ao buscar eventos:", error);
-
-    return res.status(500).json({
-      message: "Erro ao buscar eventos",
-    });
+function pickBestImage(images?: any[]) {
+  if (!Array.isArray(images) || images.length === 0) {
+    return undefined;
   }
+
+  const sorted = [...images].sort((a, b) => {
+    const areaA = Number(a.width || 0) * Number(a.height || 0);
+    const areaB = Number(b.width || 0) * Number(b.height || 0);
+    return areaB - areaA;
+  });
+
+  return sorted[0]?.url;
 }
 
-export async function getEventById(req: Request, res: Response) {
+function normalizeTicketmasterEvent(event: any): NearbyEvent {
+  const venue = event?._embedded?.venues?.[0];
+
+  const latitude = venue?.location?.latitude
+    ? Number(venue.location.latitude)
+    : undefined;
+
+  const longitude = venue?.location?.longitude
+    ? Number(venue.location.longitude)
+    : undefined;
+
+  return {
+    id: String(event.id),
+    name: event.name || "Evento sem nome",
+    description: event.info || event.pleaseNote || undefined,
+    image: pickBestImage(event.images),
+    startDate: event.dates?.start?.localDate,
+    startTime: event.dates?.start?.localTime,
+    dateTime: event.dates?.start?.dateTime,
+    venueName: venue?.name,
+    address: venue?.address?.line1,
+    city: venue?.city?.name,
+    state: venue?.state?.name || venue?.state?.stateCode,
+    country: venue?.country?.name || venue?.country?.countryCode,
+    latitude,
+    longitude,
+    url: event.url,
+    source: "ticketmaster",
+  };
+}
+
+async function fetchNearbyEvents(params: {
+  lat: number;
+  lng: number;
+  radius: number;
+  keyword?: string;
+}) {
+  const apiKey = process.env.TICKETMASTER_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("TICKETMASTER_API_KEY não configurada no .env");
+  }
+
+  const geoPoint = ngeohash.encode(params.lat, params.lng, 7);
+
+  const response = await axios.get(
+    "https://app.ticketmaster.com/discovery/v2/events.json",
+    {
+      params: {
+        apikey: apiKey,
+        geoPoint,
+        radius: params.radius,
+        unit: "km",
+        countryCode: "BR",
+        size: 30,
+        sort: "date,asc",
+        keyword: params.keyword || undefined,
+      },
+      timeout: 10000,
+    }
+  );
+
+  const events = response.data?._embedded?.events;
+
+  if (!Array.isArray(events)) {
+    return [];
+  }
+
+  return events
+    .map(normalizeTicketmasterEvent)
+    .filter((event: NearbyEvent) => event.latitude && event.longitude);
+}
+
+export const getEvents = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    const radius = req.query.radius ? Number(req.query.radius) : 100;
+    const keyword = req.query.keyword ? String(req.query.keyword) : undefined;
 
-    const event = await Event.findById(id);
-
-    if (!event) {
-      return res.status(404).json({
-        message: "Evento não encontrado",
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({
+        message: "Latitude e longitude são obrigatórias.",
+        example: "/events?lat=-23.55052&lng=-46.633308&radius=100",
       });
     }
 
-    return res.status(200).json(event);
-  } catch (error) {
-    console.log("Erro ao buscar evento:", error);
-
-    return res.status(500).json({
-      message: "Erro ao buscar evento",
-    });
-  }
-}
-
-export async function createEvent(req: Request, res: Response) {
-  try {
-    const event = await Event.create(req.body);
-
-    return res.status(201).json(event);
-  } catch (error) {
-    console.log("Erro ao criar evento:", error);
-
-    return res.status(500).json({
-      message: "Erro ao criar evento",
-    });
-  }
-}
-
-export async function deleteEvent(req: Request, res: Response) {
-  try {
-    const { id } = req.params;
-
-    const event = await Event.findByIdAndDelete(id);
-
-    if (!event) {
-      return res.status(404).json({
-        message: "Evento não encontrado",
+    if (!Number.isFinite(radius) || radius <= 0 || radius > 200) {
+      return res.status(400).json({
+        message: "O raio precisa ser um número entre 1 e 200 km.",
       });
     }
 
-    return res.status(200).json({
-      message: "Evento removido com sucesso",
+    const events = await fetchNearbyEvents({
+      lat,
+      lng,
+      radius,
+      keyword,
     });
-  } catch (error) {
-    console.log("Erro ao remover evento:", error);
+
+    return res.json({
+      total: events.length,
+      events,
+    });
+  } catch (error: any) {
+    console.error("Erro ao buscar eventos:", {
+      message: error?.message,
+      response: error?.response?.data,
+    });
 
     return res.status(500).json({
-      message: "Erro ao remover evento",
+      message: "Erro ao buscar eventos próximos.",
+      detail: error?.response?.data || error?.message,
     });
   }
-}
+};
+
+export const getNearbyEvents = getEvents;
+
+export const getEventById = async (req: Request, res: Response) => {
+  try {
+    const apiKey = process.env.TICKETMASTER_API_KEY;
+    const { id } = req.params;
+
+    if (!apiKey) {
+      return res.status(500).json({
+        message: "TICKETMASTER_API_KEY não configurada no .env",
+      });
+    }
+
+    const response = await axios.get(
+      `https://app.ticketmaster.com/discovery/v2/events/${id}.json`,
+      {
+        params: {
+          apikey: apiKey,
+        },
+        timeout: 10000,
+      }
+    );
+
+    const event = normalizeTicketmasterEvent(response.data);
+
+    return res.json(event);
+  } catch (error: any) {
+    console.error("Erro ao buscar evento por ID:", {
+      message: error?.message,
+      response: error?.response?.data,
+    });
+
+    return res.status(500).json({
+      message: "Erro ao buscar evento.",
+      detail: error?.response?.data || error?.message,
+    });
+  }
+};
+
+export const createEvent = async (_req: Request, res: Response) => {
+  return res.status(501).json({
+    message:
+      "Criação manual de eventos desativada. Os eventos agora vêm da Ticketmaster API.",
+  });
+};
+
+export const deleteEvent = async (_req: Request, res: Response) => {
+  return res.status(501).json({
+    message:
+      "Remoção manual de eventos desativada. Os eventos agora vêm da Ticketmaster API.",
+  });
+};

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -15,12 +15,27 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSelector } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
-import api from '../services/api';
 import { useTranslation } from 'react-i18next';
+import * as Speech from 'expo-speech';
+import * as Location from 'expo-location';
 
+import api from '../services/api';
+import {
+  getSelectedPlaceEventAlert,
+  requestSelectedPlaceEventAlertPermissions,
+  startSelectedPlaceEventGeofencing,
+  stopSelectedPlaceEventGeofencing,
+} from '../services/eventGeofencing';
+import {
+  getOfflinePlaceById,
+  savePlacesOffline,
+  type OfflinePlace,
+} from '../database/offlinePlaces';
 
 const FALLBACK_IMAGE =
   'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/No_image_available.svg/480px-No_image_available.svg.png';
+
+const VOICE_GUIDE_DISTANCE_METERS = 120;
 
 type VisitHour = {
   day: string;
@@ -70,18 +85,22 @@ type WeatherForecast = {
 };
 
 type Event = {
-  _id: string;
-  title: string;
-  description: string;
-  placeName: string;
-  city: string;
-  address: string;
-  date: string;
-  startTime: string;
-  endTime?: string;
+  id: string;
+  name: string;
+  description?: string;
   image?: string;
-  category: string;
-  isFree: boolean;
+  startDate?: string;
+  startTime?: string;
+  dateTime?: string;
+  venueName?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  latitude?: number;
+  longitude?: number;
+  url?: string;
+  source?: string;
 };
 
 type CheckInStats = {
@@ -103,7 +122,10 @@ type Place = {
   openingHours?: string;
   contact?: string;
   website?: string;
+  image?: string;
   images?: string[];
+  averageRating?: number;
+  reviewsCount?: number;
   location?: {
     type: string;
     coordinates: number[];
@@ -134,19 +156,14 @@ type AccessibilityField =
 type AccessibilityForm = {
   adaptedBathroom: AccessibilityAvailability;
   adaptedBathroomQuality: AccessibilityQuality;
-
   rampAccess: AccessibilityAvailability;
   rampAccessQuality: AccessibilityQuality;
-
   elevatorAccess: AccessibilityAvailability;
   elevatorAccessQuality: AccessibilityQuality;
-
   tactilePaving: AccessibilityAvailability;
   tactilePavingQuality: AccessibilityQuality;
-
   accessibleParking: AccessibilityAvailability;
   accessibleParkingQuality: AccessibilityQuality;
-
   comment: string;
 };
 
@@ -171,21 +188,72 @@ const ACCESSIBILITY_FIELDS: AccessibilityField[] = [
 const DEFAULT_ACCESSIBILITY_FORM: AccessibilityForm = {
   adaptedBathroom: 'unknown',
   adaptedBathroomQuality: 'unknown',
-
   rampAccess: 'unknown',
   rampAccessQuality: 'unknown',
-
   elevatorAccess: 'unknown',
   elevatorAccessQuality: 'unknown',
-
   tactilePaving: 'unknown',
   tactilePavingQuality: 'unknown',
-
   accessibleParking: 'unknown',
   accessibleParkingQuality: 'unknown',
-
   comment: '',
 };
+
+type DetailsThemeColors = {
+  background: string;
+  card: string;
+  cardSoft: string;
+  border: string;
+  separator: string;
+  text: string;
+  textSecondary: string;
+  muted: string;
+  placeholder: string;
+  imageBackground: string;
+  blueSoft: string;
+  buttonSecondary: string;
+};
+
+const lightDetailsColors: DetailsThemeColors = {
+  background: '#F8FAFC',
+  card: '#FFFFFF',
+  cardSoft: '#F8FAFC',
+  border: '#E2E8F0',
+  separator: '#F1F5F9',
+  text: '#0F172A',
+  textSecondary: '#334155',
+  muted: '#64748B',
+  placeholder: '#94A3B8',
+  imageBackground: '#CBD5E1',
+  blueSoft: '#EFF6FF',
+  buttonSecondary: '#E2E8F0',
+};
+
+const darkDetailsColors: DetailsThemeColors = {
+  background: '#0F172A',
+  card: '#1E293B',
+  cardSoft: '#111827',
+  border: '#334155',
+  separator: '#334155',
+  text: '#F8FAFC',
+  textSecondary: '#E2E8F0',
+  muted: '#CBD5E1',
+  placeholder: '#94A3B8',
+  imageBackground: '#334155',
+  blueSoft: '#1E3A8A',
+  buttonSecondary: '#334155',
+};
+
+const DetailsThemeContext = createContext<DetailsThemeColors>(lightDetailsColors);
+
+function useDetailsTheme() {
+  return useContext(DetailsThemeContext);
+}
+
+function getDetailsColors(isDark: boolean) {
+  return isDark ? darkDetailsColors : lightDetailsColors;
+}
+
 
 export default function DetailsScreen() {
   const navigation = useNavigation<any>();
@@ -196,32 +264,44 @@ export default function DetailsScreen() {
     return String(t(key, { defaultValue: fallback }));
   }
 
-  const { placeId } = route.params;
+  const { placeId, offlinePlace } = route.params as {
+    placeId: string;
+    offlinePlace?: Place;
+  };
 
   const user = useSelector((state: any) => state.auth.user);
   const token = useSelector((state: any) => state.auth.token);
+  const theme = useSelector((state: any) => state.theme.mode);
+  const isDark = theme === 'dark';
+  const colors = useMemo(() => getDetailsColors(isDark), [isDark]);
+  const styles = useMemo(() => createDetailsStyles(colors), [colors]);
+
+  const locationWatcherRef = useRef<Location.LocationSubscription | null>(null);
+  const spokenPlaceIdsRef = useRef<Set<string>>(new Set());
 
   const [place, setPlace] = useState<Place | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
+  const [isWalkingGuideActive, setIsWalkingGuideActive] = useState(false);
 
   const [currentWeather, setCurrentWeather] = useState<CurrentWeather | null>(
     null
   );
-
   const [weatherForecast, setWeatherForecast] =
     useState<WeatherForecast | null>(null);
-
   const [weatherLoading, setWeatherLoading] = useState(false);
 
   const [events, setEvents] = useState<Event[]>([]);
+  const [nearbyEventsCount, setNearbyEventsCount] = useState(0);
   const [eventsLoading, setEventsLoading] = useState(false);
+  const [selectedPlaceAlertActive, setSelectedPlaceAlertActive] = useState(false);
+  const [selectedPlaceAlertLoading, setSelectedPlaceAlertLoading] = useState(false);
 
   const [checkedIn, setCheckedIn] = useState(false);
   const [checkInLoading, setCheckInLoading] = useState(false);
   const [checkInStats, setCheckInStats] = useState<CheckInStats | null>(null);
-  const [placeCheckIns, setPlaceCheckIns] = useState(0);
 
   const [accessibilitySummary, setAccessibilitySummary] = useState<any>(null);
   const [accessibilityComments, setAccessibilityComments] = useState<any[]>([]);
@@ -245,9 +325,44 @@ export default function DetailsScreen() {
   const [userComment, setUserComment] = useState('');
   const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
 
+  function normalizeOfflinePlace(placeData: OfflinePlace | Place): Place {
+    return {
+      _id: placeData._id,
+      name: placeData.name,
+      city: placeData.city,
+      description: placeData.description || '',
+      categories: placeData.categories || [],
+      address: placeData.address || '',
+      openingHours: placeData.openingHours,
+      contact: placeData.contact,
+      website: placeData.website,
+      image: placeData.image,
+      images:
+        placeData.images?.length
+          ? placeData.images
+          : placeData.image
+            ? [placeData.image]
+            : [],
+      averageRating: placeData.averageRating,
+      reviewsCount: placeData.reviewsCount,
+      location: {
+        type: placeData.location?.type || 'Point',
+        coordinates: placeData.location?.coordinates || [0, 0],
+      },
+    };
+  }
+
   useEffect(() => {
     setCheckedIn(false);
     setCheckInStats(null);
+    setReviews([]);
+    setEvents([]);
+    setNearbyEventsCount(0);
+    setCurrentWeather(null);
+    setWeatherForecast(null);
+    setAccessibilitySummary(null);
+    setAccessibilityComments([]);
+    setSelectedPlaceAlertActive(false);
 
     fetchPlaceDetails();
     fetchReviews();
@@ -257,28 +372,74 @@ export default function DetailsScreen() {
     fetchMyCheckInStats();
   }, [placeId, token]);
 
+  useEffect(() => {
+    return () => {
+      Speech.stop();
+      stopWalkingGuide(false);
+    };
+  }, []);
+
   async function fetchPlaceDetails() {
     try {
       setLoading(true);
+      setIsOfflineMode(false);
+      setImageError(false);
 
       const response = await api.get(`/places/${placeId}`);
       const placeData: Place = response.data;
 
       setPlace(placeData);
-      fetchEvents(placeData._id);
 
-      const city = placeData.city;
+      try {
+        await savePlacesOffline([placeData]);
+        console.log('Detalhes salvos offline:', placeData.name);
+      } catch (offlineSaveError) {
+        console.log('Erro ao salvar detalhe offline:', offlineSaveError);
+      }
 
-      if (city) {
-        fetchCurrentWeather(city);
-        fetchWeatherForecast(city);
+      fetchEvents(placeData);
+      syncSelectedPlaceEventAlert(placeData._id);
+
+      if (placeData.city) {
+        fetchCurrentWeather(placeData.city);
+        fetchWeatherForecast(placeData.city);
       } else {
         console.log('Cidade não encontrada no local:', placeData.name);
       }
     } catch (error: any) {
-      console.log('Erro ao buscar detalhes:', error?.message);
-      Alert.alert(translate('common.error', 'Erro'), translate('details.loadError', 'Não foi possível carregar os detalhes do local.'));
-      navigation.goBack();
+      console.log('Erro ao buscar detalhes online:', error?.message);
+
+      try {
+        if (offlinePlace) {
+          setPlace(normalizeOfflinePlace(offlinePlace));
+          setIsOfflineMode(true);
+          return;
+        }
+
+        const savedPlace = await getOfflinePlaceById(placeId);
+
+        if (savedPlace) {
+          setPlace(normalizeOfflinePlace(savedPlace));
+          setIsOfflineMode(true);
+          return;
+        }
+
+        Alert.alert(
+          translate('common.error', 'Erro'),
+          'Este local ainda não está salvo para acesso offline.'
+        );
+        navigation.goBack();
+      } catch (offlineError) {
+        console.log('Erro ao buscar detalhe offline:', offlineError);
+        Alert.alert(
+          translate('common.error', 'Erro'),
+          translate(
+            'details.loadError',
+            'Não foi possível carregar os detalhes do local.'
+          )
+        );
+        navigation.goBack();
+      }
     } finally {
       setLoading(false);
     }
@@ -286,15 +447,18 @@ export default function DetailsScreen() {
 
   async function fetchReviews() {
     try {
+      if (isOfflineMode) return;
       const response = await api.get(`/reviews/${placeId}`);
-      setReviews(response.data);
+      setReviews(response.data || []);
     } catch (error: any) {
       console.log('Erro ao buscar comentários:', error?.message);
+      setReviews([]);
     }
   }
 
   async function fetchAccessibilitySummary() {
     try {
+      if (isOfflineMode) return;
       const response = await api.get(`/accessibility/${placeId}`);
       setAccessibilitySummary(response.data.summary);
       setAccessibilityComments(response.data.comments || []);
@@ -303,47 +467,9 @@ export default function DetailsScreen() {
     }
   }
 
-  function getWeekdayLabel(day: string) {
-    const normalizedDay = day
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace('-feira', '')
-      .trim();
-
-    const dayMap: Record<string, string> = {
-      segunda: 'monday',
-      monday: 'monday',
-
-      terca: 'tuesday',
-      terça: 'tuesday',
-      tuesday: 'tuesday',
-
-      quarta: 'wednesday',
-      wednesday: 'wednesday',
-
-      quinta: 'thursday',
-      thursday: 'thursday',
-
-      sexta: 'friday',
-      friday: 'friday',
-
-      sabado: 'saturday',
-      sábado: 'saturday',
-      saturday: 'saturday',
-
-      domingo: 'sunday',
-      sunday: 'sunday',
-    };
-
-    const key = dayMap[normalizedDay] || normalizedDay;
-
-    return translate(`weekdays.${key}`, day);
-  }
-
   async function fetchMyAccessibilityReview() {
     try {
-      if (!user || !token) return;
+      if (!user || !token || isOfflineMode) return;
 
       const response = await api.get(`/accessibility/${placeId}/me`, {
         headers: {
@@ -356,22 +482,16 @@ export default function DetailsScreen() {
           adaptedBathroom: response.data.adaptedBathroom || 'unknown',
           adaptedBathroomQuality:
             response.data.adaptedBathroomQuality || 'unknown',
-
           rampAccess: response.data.rampAccess || 'unknown',
           rampAccessQuality: response.data.rampAccessQuality || 'unknown',
-
           elevatorAccess: response.data.elevatorAccess || 'unknown',
           elevatorAccessQuality:
             response.data.elevatorAccessQuality || 'unknown',
-
           tactilePaving: response.data.tactilePaving || 'unknown',
-          tactilePavingQuality:
-            response.data.tactilePavingQuality || 'unknown',
-
+          tactilePavingQuality: response.data.tactilePavingQuality || 'unknown',
           accessibleParking: response.data.accessibleParking || 'unknown',
           accessibleParkingQuality:
             response.data.accessibleParkingQuality || 'unknown',
-
           comment: response.data.comment || '',
         });
       }
@@ -385,6 +505,7 @@ export default function DetailsScreen() {
 
   async function fetchCurrentWeather(city: string) {
     try {
+      if (isOfflineMode) return;
       const response = await api.get('/weather', {
         params: {
           city,
@@ -400,6 +521,7 @@ export default function DetailsScreen() {
 
   async function fetchWeatherForecast(city: string) {
     try {
+      if (isOfflineMode) return;
       setWeatherLoading(true);
 
       const response = await api.get('/weather/forecast', {
@@ -417,28 +539,226 @@ export default function DetailsScreen() {
     }
   }
 
-  async function fetchEvents(placeId: string) {
+
+
+  function normalizeEventText(value?: string) {
+    return String(value || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function getEventSearchWords(value?: string) {
+    const ignoredWords = [
+      'de',
+      'da',
+      'do',
+      'das',
+      'dos',
+      'e',
+      'a',
+      'o',
+      'as',
+      'os',
+      'the',
+      'park',
+      'parque',
+      'shopping',
+      'arena',
+      'estadio',
+      'estádio',
+      'espaco',
+      'espaço',
+      'teatro',
+      'auditorio',
+      'auditório',
+      'centro',
+      'cultural',
+    ];
+
+    return normalizeEventText(value)
+      .split(' ')
+      .filter((word) => word.length >= 3 && !ignoredWords.includes(word));
+  }
+
+  function isEventFromSelectedPlace(event: Event, currentPlace: Place) {
+    const placeName = normalizeEventText(currentPlace.name);
+    const eventVenue = normalizeEventText(event.venueName);
+    const eventAddress = normalizeEventText(event.address);
+    const eventName = normalizeEventText(event.name);
+    const searchableEventText = `${eventVenue} ${eventAddress} ${eventName}`.trim();
+
+    if (!placeName || !searchableEventText) return false;
+
+    if (eventVenue && (eventVenue.includes(placeName) || placeName.includes(eventVenue))) {
+      return true;
+    }
+
+    const importantWords = getEventSearchWords(currentPlace.name);
+
+    if (!importantWords.length) return false;
+
+    const matchedWords = importantWords.filter((word) =>
+      searchableEventText.includes(word)
+    );
+
+    return matchedWords.length >= Math.min(2, importantWords.length);
+  }
+
+  async function fetchEvents(currentPlace: Place) {
     try {
+      if (isOfflineMode) return;
+
+      const coordinates = getPlaceCoordinates(currentPlace);
+
+      if (!coordinates) {
+        console.log('Local sem coordenadas para buscar eventos:', currentPlace.name);
+        setEvents([]);
+        setNearbyEventsCount(0);
+        return;
+      }
+
       setEventsLoading(true);
 
       const response = await api.get('/events', {
         params: {
-          placeId,
+          lat: coordinates.lat,
+          lng: coordinates.lng,
+          radius: 20,
         },
       });
 
-      setEvents(response.data || []);
+      const eventsFromApi = response.data?.events || response.data || [];
+      const apiEvents: Event[] = Array.isArray(eventsFromApi) ? eventsFromApi : [];
+      setNearbyEventsCount(apiEvents.length);
+
+      const filteredEvents = apiEvents.filter((event) =>
+        isEventFromSelectedPlace(event, currentPlace)
+      );
+
+      setEvents(filteredEvents);
     } catch (error: any) {
-      console.log('Erro ao buscar eventos:', error?.message);
+      console.log(
+        'Erro ao buscar eventos do local:',
+        error?.response?.data || error?.message
+      );
       setEvents([]);
+      setNearbyEventsCount(0);
     } finally {
       setEventsLoading(false);
     }
   }
 
+  async function syncSelectedPlaceEventAlert(currentPlaceId = placeId) {
+    try {
+      const activeAlert = await getSelectedPlaceEventAlert();
+      setSelectedPlaceAlertActive(activeAlert?.placeId === currentPlaceId);
+    } catch (error: any) {
+      console.log('Erro ao verificar alerta do local:', error?.message);
+      setSelectedPlaceAlertActive(false);
+    }
+  }
+
+  async function handleToggleSelectedPlaceEventAlert() {
+    try {
+      if (isOfflineMode) {
+        Alert.alert(
+          'Modo offline',
+          'As notificações de eventos precisam de conexão e localização.'
+        );
+        return;
+      }
+
+      if (!place) {
+        Alert.alert('Eventos', 'Local não encontrado.');
+        return;
+      }
+
+      const coordinates = getPlaceCoordinates(place);
+
+      if (!coordinates) {
+        Alert.alert(
+          'Eventos',
+          'Este local não possui coordenadas para ativar notificações.'
+        );
+        return;
+      }
+
+      if (!nearbyEventsCount) {
+        Alert.alert(
+          'Eventos',
+          'Nenhum evento próximo foi encontrado para ativar notificações deste local agora.'
+        );
+        return;
+      }
+
+      setSelectedPlaceAlertLoading(true);
+
+      if (selectedPlaceAlertActive) {
+        await stopSelectedPlaceEventGeofencing();
+        setSelectedPlaceAlertActive(false);
+
+        Alert.alert(
+          'Notificações desativadas',
+          `Você não receberá mais notificações de eventos próximos de ${place.name}.`
+        );
+        return;
+      }
+
+      const permission = await requestSelectedPlaceEventAlertPermissions();
+
+      if (!permission.granted) {
+        Alert.alert('Permissão necessária', permission.message);
+        return;
+      }
+
+      const result = await startSelectedPlaceEventGeofencing({
+        placeId: place._id,
+        placeName: place.name,
+        latitude: coordinates.lat,
+        longitude: coordinates.lng,
+        eventsCount: nearbyEventsCount,
+      });
+
+      if (!result.success) {
+        Alert.alert('Eventos', result.message);
+        return;
+      }
+
+      setSelectedPlaceAlertActive(true);
+
+      Alert.alert(
+        'Notificações ativadas',
+        `Quando você se aproximar de ${place.name}, o Turistando vai avisar sobre eventos próximos deste local.`
+      );
+    } catch (error: any) {
+      console.log(
+        'Erro ao configurar notificações do local:',
+        error?.response?.data || error?.message
+      );
+
+      const errorMessage =
+        error?.message ||
+        error?.response?.data?.message ||
+        'Não foi possível configurar as notificações deste local.';
+
+      Alert.alert(
+        'Erro ao ativar notificações',
+        `${errorMessage}
+
+Se estiver testando no Expo Go, gere um APK/dev build, porque geofencing em segundo plano pode não funcionar no Expo Go.`
+      );
+    } finally {
+      setSelectedPlaceAlertLoading(false);
+    }
+  }
+
   async function fetchCheckInStatus() {
     try {
-      if (!user || !token) {
+      if (!user || !token || isOfflineMode) {
         setCheckedIn(false);
         return;
       }
@@ -457,7 +777,7 @@ export default function DetailsScreen() {
 
   async function fetchMyCheckInStats() {
     try {
-      if (!user || !token) {
+      if (!user || !token || isOfflineMode) {
         setCheckInStats(null);
         return;
       }
@@ -476,10 +796,21 @@ export default function DetailsScreen() {
 
   async function handleCheckIn() {
     try {
+      if (isOfflineMode) {
+        Alert.alert(
+          'Modo offline',
+          'Não é possível fazer check-in sem conexão. Tente novamente quando estiver online.'
+        );
+        return;
+      }
+
       if (!user || !token) {
         Alert.alert(
           translate('common.attention', 'Atenção'),
-          translate('details.mustLoginCheckIn', 'Você precisa estar logado para fazer check-in.')
+          translate(
+            'details.mustLoginCheckIn',
+            'Você precisa estar logado para fazer check-in.'
+          )
         );
         return;
       }
@@ -488,9 +819,7 @@ export default function DetailsScreen() {
 
       const response = await api.post(
         '/checkins',
-        {
-          placeId,
-        },
+        { placeId },
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -505,31 +834,135 @@ export default function DetailsScreen() {
       }
 
       const message = response.data.alreadyCheckedIn
-        ? translate('details.alreadyCheckedIn', 'Você já fez check-in neste local.')
-        : translate('details.checkInSuccess', 'Check-in realizado com sucesso.');
+        ? translate(
+            'details.alreadyCheckedIn',
+            'Você já fez check-in neste local.'
+          )
+        : translate(
+            'details.checkInSuccess',
+            'Check-in realizado com sucesso.'
+          );
 
       Alert.alert(translate('common.success', 'Sucesso'), message);
     } catch (error: any) {
-      console.log('Erro ao fazer check-in:', error?.response?.data || error?.message);
+      console.log(
+        'Erro ao fazer check-in:',
+        error?.response?.data || error?.message
+      );
 
       Alert.alert(
         translate('common.error', 'Erro'),
         error?.response?.data?.message ||
-        translate('details.checkInError', 'Não foi possível realizar o check-in.')
+          translate(
+            'details.checkInError',
+            'Não foi possível realizar o check-in.'
+          )
       );
     } finally {
       setCheckInLoading(false);
     }
   }
 
-  function formatEventDate(date: string) {
-    return new Date(date).toLocaleDateString(
-      i18n.language === 'en' ? 'en-US' : i18n.language === 'es' ? 'es-ES' : 'pt-BR',
+  function getWeekdayLabel(day: string) {
+    const normalizedDay = day
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace('-feira', '')
+      .trim();
+
+    const dayMap: Record<string, string> = {
+      segunda: 'monday',
+      monday: 'monday',
+      terca: 'tuesday',
+      terça: 'tuesday',
+      tuesday: 'tuesday',
+      quarta: 'wednesday',
+      wednesday: 'wednesday',
+      quinta: 'thursday',
+      thursday: 'thursday',
+      sexta: 'friday',
+      friday: 'friday',
+      sabado: 'saturday',
+      sábado: 'saturday',
+      saturday: 'saturday',
+      domingo: 'sunday',
+      sunday: 'sunday',
+    };
+
+    const key = dayMap[normalizedDay] || normalizedDay;
+
+    return translate(`weekdays.${key}`, day);
+  }
+
+  function formatEventDate(date?: string) {
+    if (!date) {
+      return translate('details.dateUnavailable', 'Data não informada');
+    }
+
+    const parsedDate = date.includes('T')
+      ? new Date(date)
+      : new Date(`${date}T00:00:00`);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      return translate('details.dateUnavailable', 'Data não informada');
+    }
+
+    return parsedDate.toLocaleDateString(
+      i18n.language === 'en'
+        ? 'en-US'
+        : i18n.language === 'es'
+          ? 'es-ES'
+          : 'pt-BR',
       {
         day: '2-digit',
         month: 'short',
         year: 'numeric',
-      });
+      }
+    );
+  }
+
+  function formatEventTime(time?: string) {
+    if (!time) {
+      return translate('details.timeUnavailable', 'Horário não informado');
+    }
+
+    return time.slice(0, 5);
+  }
+
+  async function openEventUrl(event: Event) {
+    if (!event.url) return;
+
+    const canOpen = await Linking.canOpenURL(event.url);
+
+    if (canOpen) {
+      Linking.openURL(event.url);
+    } else {
+      Alert.alert(
+        translate('common.error', 'Erro'),
+        translate('details.openEventError', 'Não foi possível abrir o evento.')
+      );
+    }
+  }
+
+  function formatForecastDate(date: string, index: number) {
+    if (index === 0) return translate('details.today', 'Hoje');
+    if (index === 1) return translate('details.tomorrow', 'Amanhã');
+
+    const parsedDate = new Date(`${date}T00:00:00`);
+
+    return parsedDate.toLocaleDateString(
+      i18n.language === 'en'
+        ? 'en-US'
+        : i18n.language === 'es'
+          ? 'es-ES'
+          : 'pt-BR',
+      {
+        weekday: 'short',
+        day: '2-digit',
+        month: '2-digit',
+      }
+    );
   }
 
   function toggleSection(section: AccordionKey) {
@@ -553,53 +986,44 @@ export default function DetailsScreen() {
     return String(review.userId) === loggedUserId;
   }
 
-  function getImageUri(place: Place) {
+  function getImageUri(currentPlace: Place) {
     if (imageError) return FALLBACK_IMAGE;
 
-    const imageUrl = place.images?.[0]?.trim();
+    const imageUrl =
+      currentPlace.images?.[0]?.trim() || currentPlace.image?.trim();
 
-    if (!imageUrl || !imageUrl.startsWith('https://')) {
-      return FALLBACK_IMAGE;
-    }
+    if (!imageUrl) return FALLBACK_IMAGE;
+
+    if (imageUrl.startsWith('file://')) return imageUrl;
+
+    if (!imageUrl.startsWith('https://')) return FALLBACK_IMAGE;
 
     return encodeURI(imageUrl);
   }
 
   function getAverageRating() {
-    if (!reviews.length) {
-      return '0.0';
+    if (reviews.length) {
+      const total = reviews.reduce((sum, review) => sum + review.rating, 0);
+      return (total / reviews.length).toFixed(1);
     }
 
-    const total = reviews.reduce((sum, review) => sum + review.rating, 0);
+    if (place?.averageRating) {
+      return Math.min(Number(place.averageRating || 0), 5).toFixed(1);
+    }
 
-    return (total / reviews.length).toFixed(1);
+    return '0.0';
   }
 
   function getSafetyLabel(level?: SafetyLevel) {
     switch (level) {
       case 'very_safe':
-        return translate(
-          'details.safetyLevels.verySafe',
-          'Muito seguro'
-        );
-
+        return translate('details.safetyLevels.verySafe', 'Muito seguro');
       case 'little_safe':
-        return translate(
-          'details.safetyLevels.littleSafe',
-          'Pouco seguro'
-        );
-
+        return translate('details.safetyLevels.littleSafe', 'Pouco seguro');
       case 'not_safe':
-        return translate(
-          'details.safetyLevels.notSafe',
-          'Nada seguro'
-        );
-
+        return translate('details.safetyLevels.notSafe', 'Nada seguro');
       default:
-        return translate(
-          'details.safetyLevels.verySafe',
-          'Muito seguro'
-        );
+        return translate('details.safetyLevels.verySafe', 'Muito seguro');
     }
   }
 
@@ -640,7 +1064,7 @@ export default function DetailsScreen() {
           'details.accessibilityLabels.noReviews',
           'Sem avaliações'
         ),
-        color: '#64748B',
+        color: colors.muted,
         level: 'unknown',
       };
     }
@@ -702,31 +1126,23 @@ export default function DetailsScreen() {
           'details.accessibilityFields.adaptedBathroom',
           'Banheiro adaptado'
         );
-
       case 'rampAccess':
-        return translate(
-          'details.accessibilityFields.rampAccess',
-          'Rampas'
-        );
-
+        return translate('details.accessibilityFields.rampAccess', 'Rampas');
       case 'elevatorAccess':
         return translate(
           'details.accessibilityFields.elevatorAccess',
           'Elevadores'
         );
-
       case 'tactilePaving':
         return translate(
           'details.accessibilityFields.tactilePaving',
           'Piso tátil'
         );
-
       case 'accessibleParking':
         return translate(
           'details.accessibilityFields.accessibleParking',
           'Estacionamento acessível'
         );
-
       default:
         return field;
     }
@@ -755,7 +1171,7 @@ export default function DetailsScreen() {
     if (!accessibilitySummary) {
       return {
         label: translate('details.accessibilityLabels.noData', 'Sem dados'),
-        color: '#64748B',
+        color: colors.muted,
       };
     }
 
@@ -769,13 +1185,16 @@ export default function DetailsScreen() {
     if (yes === 0 && no === 0 && unknown > 0) {
       return {
         label: translate('details.accessibilityLabels.noData', 'Sem dados'),
-        color: '#64748B',
+        color: colors.muted,
       };
     }
 
     if (no > yes) {
       return {
-        label: translate('details.accessibilityLabels.notAvailable', 'Não possui'),
+        label: translate(
+          'details.accessibilityLabels.notAvailable',
+          'Não possui'
+        ),
         color: '#DC2626',
       };
     }
@@ -785,10 +1204,7 @@ export default function DetailsScreen() {
     const bad = quality?.bad || 0;
 
     if (good >= partial && good >= bad) {
-      return {
-        label: translate('details.good', 'Bom'),
-        color: '#16A34A',
-      };
+      return { label: translate('details.good', 'Bom'), color: '#16A34A' };
     }
 
     if (partial >= good && partial >= bad) {
@@ -798,71 +1214,34 @@ export default function DetailsScreen() {
       };
     }
 
-    return {
-      label: translate('details.bad', 'Ruim'),
-      color: '#DC2626',
-    };
+    return { label: translate('details.bad', 'Ruim'), color: '#DC2626' };
   }
 
   function getAvailabilityLabel(value: AccessibilityAvailability) {
     switch (value) {
       case 'yes':
-        return translate(
-          'details.accessibilityLabels.yes',
-          'Sim'
-        );
-
+        return translate('details.accessibilityLabels.yes', 'Sim');
       case 'no':
-        return translate(
-          'details.accessibilityLabels.no',
-          'Não'
-        );
-
+        return translate('details.accessibilityLabels.no', 'Não');
       case 'unknown':
-        return translate(
-          'details.accessibilityLabels.unknown',
-          'Não sei'
-        );
-
+        return translate('details.accessibilityLabels.unknown', 'Não sei');
       default:
-        return translate(
-          'details.accessibilityLabels.unknown',
-          'Não sei'
-        );
+        return translate('details.accessibilityLabels.unknown', 'Não sei');
     }
   }
 
   function getQualityLabel(value: AccessibilityQuality) {
     switch (value) {
       case 'good':
-        return translate(
-          'details.accessibilityLabels.good',
-          'Bom'
-        );
-
+        return translate('details.accessibilityLabels.good', 'Bom');
       case 'partial':
-        return translate(
-          'details.accessibilityLabels.partial',
-          'Parcial'
-        );
-
+        return translate('details.accessibilityLabels.partial', 'Parcial');
       case 'bad':
-        return translate(
-          'details.accessibilityLabels.bad',
-          'Ruim'
-        );
-
+        return translate('details.accessibilityLabels.bad', 'Ruim');
       case 'unknown':
-        return translate(
-          'details.accessibilityLabels.unknown',
-          'Não sei'
-        );
-
+        return translate('details.accessibilityLabels.unknown', 'Não sei');
       default:
-        return translate(
-          'details.accessibilityLabels.unknown',
-          'Não sei'
-        );
+        return translate('details.accessibilityLabels.unknown', 'Não sei');
     }
   }
 
@@ -903,10 +1282,21 @@ export default function DetailsScreen() {
 
   async function handleSaveAccessibilityReview() {
     try {
+      if (isOfflineMode) {
+        Alert.alert(
+          'Modo offline',
+          'Não é possível salvar avaliação de acessibilidade sem conexão.'
+        );
+        return;
+      }
+
       if (!user || !token) {
         Alert.alert(
           'Atenção',
-          translate('details.mustLoginAccessibility', 'Você precisa estar logado para avaliar a acessibilidade.')
+          translate(
+            'details.mustLoginAccessibility',
+            'Você precisa estar logado para avaliar a acessibilidade.'
+          )
         );
         return;
       }
@@ -922,31 +1312,232 @@ export default function DetailsScreen() {
       await fetchAccessibilitySummary();
       await fetchMyAccessibilityReview();
 
-      Alert.alert(translate('common.success', 'Sucesso'), translate('details.accessibilitySaved', 'Avaliação de acessibilidade salva.'));
+      Alert.alert(
+        translate('common.success', 'Sucesso'),
+        translate(
+          'details.accessibilitySaved',
+          'Avaliação de acessibilidade salva.'
+        )
+      );
     } catch (error: any) {
       console.log('Erro ao salvar acessibilidade:', error?.message);
       Alert.alert(
         'Erro',
-        translate('details.accessibilitySaveError', 'Não foi possível salvar a avaliação de acessibilidade.')
+        translate(
+          'details.accessibilitySaveError',
+          'Não foi possível salvar a avaliação de acessibilidade.'
+        )
       );
     } finally {
       setAccessibilityLoading(false);
     }
   }
 
-  function formatForecastDate(date: string, index: number) {
-    if (index === 0) return translate('details.today', 'Hoje');
-    if (index === 1) return translate('details.tomorrow', 'Amanhã');
+  function calculateDistanceInMeters(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number
+  ) {
+    const earthRadius = 6371000;
+    const toRadians = (value: number) => (value * Math.PI) / 180;
 
-    const parsedDate = new Date(`${date}T00:00:00`);
+    const dLat = toRadians(lat2 - lat1);
+    const dLon = toRadians(lon2 - lon1);
 
-    return parsedDate.toLocaleDateString(
-      i18n.language === 'en' ? 'en-US' : i18n.language === 'es' ? 'es-ES' : 'pt-BR',
-      {
-        weekday: 'short',
-        day: '2-digit',
-        month: '2-digit',
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRadians(lat1)) *
+        Math.cos(toRadians(lat2)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return earthRadius * c;
+  }
+
+  function getPlaceCoordinates(currentPlace: Place) {
+    const coordinates = currentPlace.location?.coordinates;
+
+    if (!coordinates || coordinates.length < 2) return null;
+
+    const [lng, lat] = coordinates;
+
+    if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+    if (lat === 0 && lng === 0) return null;
+
+    return { lat, lng };
+  }
+
+  function getVoiceGuideLanguage() {
+    if (i18n.language === 'en') return 'en-US';
+    if (i18n.language === 'es') return 'es-ES';
+    return 'pt-BR';
+  }
+
+  function buildVoiceGuideText(currentPlace: Place) {
+    const categoriesText = currentPlace.categories?.length
+      ? currentPlace.categories
+          .map((cat) => translate(`categories.${cat.toLowerCase()}`, cat))
+          .join(', ')
+      : '';
+
+    return `
+      Você está próximo de ${currentPlace.name}.
+      ${
+        currentPlace.description ||
+        'Este é um ponto turístico recomendado no Turistando.'
+      }
+      ${currentPlace.address ? `Endereço: ${currentPlace.address}.` : ''}
+      ${
+        currentPlace.openingHours
+          ? `Horário de funcionamento: ${currentPlace.openingHours}.`
+          : ''
+      }
+      ${categoriesText ? `Categorias: ${categoriesText}.` : ''}
+    `;
+  }
+
+  async function speakNearbyPlace(currentPlace: Place) {
+    try {
+      const speaking = await Speech.isSpeakingAsync();
+
+      if (speaking) return;
+
+      spokenPlaceIdsRef.current.add(currentPlace._id);
+
+      Speech.speak(buildVoiceGuideText(currentPlace), {
+        language: getVoiceGuideLanguage(),
+        rate: 0.9,
+        pitch: 1,
       });
+    } catch (error: any) {
+      console.log('Erro ao narrar ponto próximo:', error?.message);
+    }
+  }
+
+  function checkNearbyPlacesAndSpeak(
+    userLat: number,
+    userLng: number,
+    placesList: Place[]
+  ) {
+    const nearbyPlace = placesList.find((item) => {
+      if (!item?._id) return false;
+      if (spokenPlaceIdsRef.current.has(item._id)) return false;
+
+      const coordinates = getPlaceCoordinates(item);
+      if (!coordinates) return false;
+
+      const distance = calculateDistanceInMeters(
+        userLat,
+        userLng,
+        coordinates.lat,
+        coordinates.lng
+      );
+
+      return distance <= VOICE_GUIDE_DISTANCE_METERS;
+    });
+
+    if (nearbyPlace) {
+      speakNearbyPlace(nearbyPlace);
+    }
+  }
+
+  function stopWalkingGuide(showAlert = true) {
+    if (locationWatcherRef.current) {
+      locationWatcherRef.current.remove();
+      locationWatcherRef.current = null;
+    }
+
+    Speech.stop();
+    spokenPlaceIdsRef.current.clear();
+    setIsWalkingGuideActive(false);
+
+    if (showAlert) {
+      Alert.alert('Guia de voz', 'Guia automático desativado.');
+    }
+  }
+
+  async function handleToggleWalkingGuide() {
+    if (isWalkingGuideActive) {
+      stopWalkingGuide(true);
+      return;
+    }
+
+    try {
+      if (isOfflineMode) {
+        Alert.alert(
+          'Modo offline',
+          'O guia automático precisa de localização e lista de pontos disponíveis no app.'
+        );
+        return;
+      }
+
+      const permission = await Location.requestForegroundPermissionsAsync();
+
+      if (permission.status !== 'granted') {
+        Alert.alert(
+          'Permissão necessária',
+          'Permita o acesso à localização para usar o guia automático durante o passeio.'
+        );
+        return;
+      }
+
+      const response = await api.get('/places');
+      const placesList: Place[] = response.data?.places || response.data || [];
+
+      if (!placesList.length) {
+        Alert.alert(
+          'Guia de voz',
+          'Não encontrei pontos turísticos para monitorar agora.'
+        );
+        return;
+      }
+
+      spokenPlaceIdsRef.current.clear();
+
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+
+      checkNearbyPlacesAndSpeak(
+        currentLocation.coords.latitude,
+        currentLocation.coords.longitude,
+        placesList
+      );
+
+      const watcher = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High,
+          distanceInterval: 20,
+          timeInterval: 5000,
+        },
+        (location) => {
+          checkNearbyPlacesAndSpeak(
+            location.coords.latitude,
+            location.coords.longitude,
+            placesList
+          );
+        }
+      );
+
+      locationWatcherRef.current = watcher;
+      setIsWalkingGuideActive(true);
+
+      Alert.alert(
+        'Guia de voz ativado',
+        `Ao chegar a até ${VOICE_GUIDE_DISTANCE_METERS} metros de um ponto turístico, o app vai narrar automaticamente as informações.`
+      );
+    } catch (error: any) {
+      console.log('Erro ao ativar guia automático:', error?.message);
+      stopWalkingGuide(false);
+
+      Alert.alert(
+        'Erro',
+        'Não foi possível ativar o guia automático durante o passeio.'
+      );
+    }
   }
 
   async function openWebsite() {
@@ -957,7 +1548,10 @@ export default function DetailsScreen() {
     if (canOpen) {
       Linking.openURL(place.website);
     } else {
-      Alert.alert(translate('common.error', 'Erro'), translate('details.openWebsiteError', 'Não foi possível abrir o site.'));
+      Alert.alert(
+        translate('common.error', 'Erro'),
+        translate('details.openWebsiteError', 'Não foi possível abrir o site.')
+      );
     }
   }
 
@@ -972,7 +1566,10 @@ export default function DetailsScreen() {
     if (canOpen) {
       Linking.openURL(phoneUrl);
     } else {
-      Alert.alert(translate('common.error', 'Erro'), translate('details.openPhoneError', 'Não foi possível abrir o telefone.'));
+      Alert.alert(
+        translate('common.error', 'Erro'),
+        translate('details.openPhoneError', 'Não foi possível abrir o telefone.')
+      );
     }
   }
 
@@ -989,26 +1586,40 @@ export default function DetailsScreen() {
 
   async function openRoutes() {
     if (!place?.location?.coordinates?.length) {
-      Alert.alert(translate('common.error', 'Erro'), translate('details.locationUnavailable', 'Localização do lugar não disponível.'));
+      Alert.alert(
+        translate('common.error', 'Erro'),
+        translate(
+          'details.locationUnavailable',
+          'Localização do lugar não disponível.'
+        )
+      );
       return;
     }
 
     const [lng, lat] = place.location.coordinates;
-
     const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
-
     const canOpen = await Linking.canOpenURL(url);
 
     if (canOpen) {
       Linking.openURL(url);
     } else {
-      Alert.alert(translate('common.error', 'Erro'), translate('details.openRoutesError', 'Não foi possível abrir as rotas.'));
+      Alert.alert(
+        translate('common.error', 'Erro'),
+        translate('details.openRoutesError', 'Não foi possível abrir as rotas.')
+      );
     }
   }
 
-
   async function handleAddToItinerary() {
     try {
+      if (isOfflineMode) {
+        Alert.alert(
+          'Modo offline',
+          'Não é possível adicionar ao roteiro sem conexão.'
+        );
+        return;
+      }
+
       if (!user || !token) {
         Alert.alert(
           translate('common.attention', 'Atenção'),
@@ -1064,10 +1675,7 @@ export default function DetailsScreen() {
 
       Alert.alert(
         translate('common.success', 'Sucesso'),
-        translate(
-          'details.addedToItinerary',
-          'Local adicionado ao seu roteiro.'
-        )
+        translate('details.addedToItinerary', 'Local adicionado ao seu roteiro.')
       );
     } catch (error: any) {
       console.log(
@@ -1094,33 +1702,55 @@ export default function DetailsScreen() {
     try {
       await Share.share({
         title: `Conheça ${place.name}`,
-        message: `Confira ${place.name} no Turistando!
-
-  ${place.address}
-
-  Abrir no app: ${deepLink}`,
+        message: `Confira ${place.name} no Turistando!\n\n${place.address}\n\nAbrir no app: ${deepLink}`,
         url: deepLink,
       });
     } catch (error: any) {
       console.log('Erro ao compartilhar local:', error?.message);
-      Alert.alert(translate('common.error', 'Erro'), translate('details.shareError', 'Não foi possível compartilhar este local.'));
+      Alert.alert(
+        translate('common.error', 'Erro'),
+        translate('details.shareError', 'Não foi possível compartilhar este local.')
+      );
     }
   }
 
   async function handleSaveReview() {
     try {
+      if (isOfflineMode) {
+        Alert.alert(
+          'Modo offline',
+          'Não é possível publicar comentários sem conexão.'
+        );
+        return;
+      }
+
       if (!user) {
-        Alert.alert(translate('common.attention', 'Atenção'), translate('details.mustLoginComment', 'Você precisa estar logado para comentar.'));
+        Alert.alert(
+          translate('common.attention', 'Atenção'),
+          translate(
+            'details.mustLoginComment',
+            'Você precisa estar logado para comentar.'
+          )
+        );
         return;
       }
 
       if (userRating === 0) {
-        Alert.alert(translate('common.attention', 'Atenção'), translate('details.selectRating', 'Selecione uma avaliação de 1 a 5 estrelas.'));
+        Alert.alert(
+          translate('common.attention', 'Atenção'),
+          translate(
+            'details.selectRating',
+            'Selecione uma avaliação de 1 a 5 estrelas.'
+          )
+        );
         return;
       }
 
       if (!userComment.trim()) {
-        Alert.alert(translate('common.attention', 'Atenção'), translate('details.typeComment', 'Digite um comentário.'));
+        Alert.alert(
+          translate('common.attention', 'Atenção'),
+          translate('details.typeComment', 'Digite um comentário.')
+        );
         return;
       }
 
@@ -1143,13 +1773,25 @@ export default function DetailsScreen() {
       await fetchReviews();
     } catch (error: any) {
       console.log('Erro ao salvar comentário:', error?.message);
-      Alert.alert(translate('common.error', 'Erro'), translate('details.commentSaveError', 'Não foi possível salvar o comentário.'));
+      Alert.alert(
+        translate('common.error', 'Erro'),
+        translate(
+          'details.commentSaveError',
+          'Não foi possível salvar o comentário.'
+        )
+      );
     }
   }
 
   function handleEditReview(review: Review) {
     if (!isReviewOwner(review)) {
-      Alert.alert(translate('common.attention', 'Atenção'), translate('details.onlyEditOwnComments', 'Você só pode editar seus próprios comentários.'));
+      Alert.alert(
+        translate('common.attention', 'Atenção'),
+        translate(
+          'details.onlyEditOwnComments',
+          'Você só pode editar seus próprios comentários.'
+        )
+      );
       return;
     }
 
@@ -1170,14 +1812,31 @@ export default function DetailsScreen() {
   }
 
   function handleDeleteReview(review: Review) {
+    if (isOfflineMode) {
+      Alert.alert(
+        'Modo offline',
+        'Não é possível excluir comentários sem conexão.'
+      );
+      return;
+    }
+
     if (!isReviewOwner(review)) {
-      Alert.alert(translate('common.attention', 'Atenção'), translate('details.onlyDeleteOwnComments', 'Você só pode excluir seus próprios comentários.'));
+      Alert.alert(
+        translate('common.attention', 'Atenção'),
+        translate(
+          'details.onlyDeleteOwnComments',
+          'Você só pode excluir seus próprios comentários.'
+        )
+      );
       return;
     }
 
     Alert.alert(
       translate('details.deleteComment', 'Excluir comentário'),
-      translate('details.confirmDeleteComment', 'Tem certeza que deseja excluir este comentário?'),
+      translate(
+        'details.confirmDeleteComment',
+        'Tem certeza que deseja excluir este comentário?'
+      ),
       [
         {
           text: translate('common.cancel', 'Cancelar'),
@@ -1197,7 +1856,13 @@ export default function DetailsScreen() {
               await fetchReviews();
             } catch (error: any) {
               console.log('Erro ao excluir comentário:', error?.message);
-              Alert.alert(translate('common.error', 'Erro'), translate('details.commentDeleteError', 'Não foi possível excluir o comentário.'));
+              Alert.alert(
+                translate('common.error', 'Erro'),
+                translate(
+                  'details.commentDeleteError',
+                  'Não foi possível excluir o comentário.'
+                )
+              );
             }
           },
         },
@@ -1226,15 +1891,16 @@ export default function DetailsScreen() {
     : DEFAULT_VISITED_HOURS;
 
   const safetyLevel = place.safety?.level || 'very_safe';
-
   const safetyDescription =
     place.safety?.description ||
     'Local considerado seguro pelos visitantes, principalmente em horários de maior movimento.';
 
   const accessibilityLevel = getAccessibilityLevel(accessibilitySummary);
+  const reviewCount = reviews.length || place.reviewsCount || 0;
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <DetailsThemeContext.Provider value={colors}>
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       <View style={styles.imageWrapper}>
         <Image
           source={{ uri: getImageUri(place) }}
@@ -1271,18 +1937,53 @@ export default function DetailsScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
+          style={[
+            styles.voiceGuideButton,
+            isWalkingGuideActive && styles.voiceGuideButtonActive,
+          ]}
+          activeOpacity={0.85}
+          onPress={handleToggleWalkingGuide}
+        >
+          <Ionicons
+            name={isWalkingGuideActive ? 'walk-outline' : 'volume-high-outline'}
+            size={21}
+            color="#FFFFFF"
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={styles.shareButton}
           activeOpacity={0.85}
           onPress={handleSharePlace}
         >
           <Ionicons name="share-social-outline" size={21} color="#FFFFFF" />
-          <Text style={styles.shareButtonText}>{translate('details.link', 'Link')}</Text>
+          <Text style={styles.shareButtonText}>
+            {translate('details.link', 'Link')}
+          </Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.content}>
+        {isOfflineMode ? (
+          <View style={styles.offlineBanner}>
+            <Ionicons name="cloud-offline-outline" size={20} color="#92400E" />
+            <Text style={styles.offlineBannerText}>
+              Modo offline: exibindo dados salvos no dispositivo.
+            </Text>
+          </View>
+        ) : null}
+
+        {isWalkingGuideActive ? (
+          <View style={styles.voiceGuideBanner}>
+            <Ionicons name="walk-outline" size={20} color="#1D4ED8" />
+            <Text style={styles.voiceGuideBannerText}>
+              Guia automático ativo. Ao se aproximar de um ponto turístico, o app narrará as informações.
+            </Text>
+          </View>
+        ) : null}
+
         <Text style={styles.category}>
-          {place.categories
+          {(place.categories || [])
             .map((cat) =>
               translate(`categories.${cat.toLowerCase()}`, cat).toUpperCase()
             )
@@ -1291,12 +1992,15 @@ export default function DetailsScreen() {
 
         <Text style={styles.title}>{place.name}</Text>
 
-        {reviews.length > 0 ? (
+        {reviewCount > 0 ? (
           <Text style={styles.rating}>
-            ⭐ {getAverageRating()} • {reviews.length} {translate('details.reviews', 'avaliações')}
+            ⭐ {getAverageRating()} • {reviewCount}{' '}
+            {translate('details.reviews', 'avaliações')}
           </Text>
         ) : (
-          <Text style={styles.rating}>{translate('results.noReviews', 'Ainda sem avaliações')}</Text>
+          <Text style={styles.rating}>
+            {translate('results.noReviews', 'Ainda sem avaliações')}
+          </Text>
         )}
 
         <View style={styles.checkInCard}>
@@ -1312,14 +2016,25 @@ export default function DetailsScreen() {
             <View style={styles.checkInInfo}>
               <Text style={styles.checkInTitle}>
                 {checkedIn
-                  ? translate('details.checkedInTitle', 'Você já visitou este local')
+                  ? translate(
+                      'details.checkedInTitle',
+                      'Você já visitou este local'
+                    )
                   : translate('details.checkInTitle', 'Registrar visita')}
               </Text>
 
               <Text style={styles.checkInDescription}>
-                {checkedIn
-                  ? translate('details.checkedInDescription', 'Seu check-in está salvo na sua conta.')
-                  : translate('details.checkInDescription', 'Faça check-in e acumule pontos no Turistando.')}
+                {isOfflineMode
+                  ? 'Disponível apenas online.'
+                  : checkedIn
+                    ? translate(
+                        'details.checkedInDescription',
+                        'Seu check-in está salvo na sua conta.'
+                      )
+                    : translate(
+                        'details.checkInDescription',
+                        'Faça check-in e acumule pontos no Turistando.'
+                      )}
               </Text>
             </View>
           </View>
@@ -1372,6 +2087,7 @@ export default function DetailsScreen() {
             style={[
               styles.checkInButton,
               checkedIn && styles.checkInButtonDone,
+              isOfflineMode && styles.disabledButton,
             ]}
             activeOpacity={0.8}
             onPress={handleCheckIn}
@@ -1412,7 +2128,9 @@ export default function DetailsScreen() {
               onPress={openMap}
             >
               <Ionicons name="map-outline" size={19} color="#FFFFFF" />
-              <Text style={styles.mapButtonText}>{translate('details.openOnMap', 'Abrir no mapa')}</Text>
+              <Text style={styles.mapButtonText}>
+                {translate('details.openOnMap', 'Abrir no mapa')}
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -1421,12 +2139,14 @@ export default function DetailsScreen() {
               onPress={openRoutes}
             >
               <Ionicons name="navigate-outline" size={19} color="#FFFFFF" />
-              <Text style={styles.mapButtonText}>{translate('results.routes', 'Ver rotas')}</Text>
+              <Text style={styles.mapButtonText}>
+                {translate('results.routes', 'Ver rotas')}
+              </Text>
             </TouchableOpacity>
           </View>
 
           <TouchableOpacity
-            style={styles.itineraryButton}
+            style={[styles.itineraryButton, isOfflineMode && styles.disabledButton]}
             activeOpacity={0.85}
             onPress={handleAddToItinerary}
           >
@@ -1446,7 +2166,10 @@ export default function DetailsScreen() {
           {place.openingHours ? (
             <InfoRow
               icon="time-outline"
-              label={translate('details.openingHours', 'Horário de funcionamento')}
+              label={translate(
+                'details.openingHours',
+                'Horário de funcionamento'
+              )}
               value={place.openingHours}
             />
           ) : null}
@@ -1473,7 +2196,10 @@ export default function DetailsScreen() {
 
           {!place.openingHours && !place.contact && !place.website ? (
             <Text style={styles.emptySectionText}>
-              {translate('details.noAdditionalInfo', 'Nenhuma informação adicional disponível.')}
+              {translate(
+                'details.noAdditionalInfo',
+                'Nenhuma informação adicional disponível.'
+              )}
             </Text>
           ) : null}
         </AccordionSection>
@@ -1484,10 +2210,14 @@ export default function DetailsScreen() {
           isOpen={openSections.weather}
           onPress={() => toggleSection('weather')}
         >
-          {weatherLoading ? (
-            <View style={styles.weatherLoading}>
+          {isOfflineMode ? (
+            <Text style={styles.emptySectionText}>
+              Previsão do tempo disponível apenas online.
+            </Text>
+          ) : weatherLoading ? (
+            <View style={styles.inlineLoading}>
               <ActivityIndicator size="small" color="#3B82F6" />
-              <Text style={styles.weatherLoadingText}>
+              <Text style={styles.inlineLoadingText}>
                 {translate('details.loadingForecast', 'Carregando previsão...')}
               </Text>
             </View>
@@ -1500,11 +2230,7 @@ export default function DetailsScreen() {
               {weatherForecast.forecast.map((item, index) => (
                 <View key={item.date} style={styles.forecastRow}>
                   <View style={styles.forecastDateWrapper}>
-                    <Image
-                      source={{ uri: item.iconUrl }}
-                      style={styles.weatherIcon}
-                    />
-
+                    <Image source={{ uri: item.iconUrl }} style={styles.weatherIcon} />
                     <View style={styles.forecastTextWrapper}>
                       <Text style={styles.forecastDate}>
                         {formatForecastDate(item.date, index)}
@@ -1523,11 +2249,13 @@ export default function DetailsScreen() {
             </View>
           ) : (
             <Text style={styles.emptySectionText}>
-              {translate('details.forecastLoadError', 'Não foi possível carregar a previsão do tempo.')}
+              {translate(
+                'details.forecastLoadError',
+                'Não foi possível carregar a previsão do tempo.'
+              )}
             </Text>
           )}
         </AccordionSection>
-
 
         <AccordionSection
           title={translate('details.events', 'Eventos próximos')}
@@ -1536,19 +2264,90 @@ export default function DetailsScreen() {
           isOpen={openSections.events}
           onPress={() => toggleSection('events')}
         >
-          {eventsLoading ? (
-            <View style={styles.eventsLoading}>
-              <ActivityIndicator size="small" color="#9333EA" />
-              <Text style={styles.eventsLoadingText}>{translate('details.loadingEvents', 'Carregando eventos...')}</Text>
-            </View>
-          ) : events.length === 0 ? (
+          {isOfflineMode ? (
             <Text style={styles.emptySectionText}>
-              {translate('details.noEvents', 'Nenhum evento próximo encontrado.')}
+              Eventos disponíveis apenas online.
             </Text>
+          ) : eventsLoading ? (
+            <View style={styles.inlineLoading}>
+              <ActivityIndicator size="small" color="#9333EA" />
+              <Text style={styles.inlineLoadingText}>
+                {translate('details.loadingEvents', 'Carregando eventos...')}
+              </Text>
+            </View>
           ) : (
             <View style={styles.eventsWrapper}>
-              {events.map((event) => (
-                <View key={event._id} style={styles.eventCard}>
+              {nearbyEventsCount > 0 ? (
+                <>
+                  <TouchableOpacity
+                    style={[
+                      styles.selectedPlaceEventAlertButton,
+                      selectedPlaceAlertActive &&
+                        styles.selectedPlaceEventAlertButtonActive,
+                    ]}
+                    activeOpacity={0.85}
+                    onPress={handleToggleSelectedPlaceEventAlert}
+                    disabled={selectedPlaceAlertLoading}
+                  >
+                    {selectedPlaceAlertLoading ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Ionicons
+                          name={
+                            selectedPlaceAlertActive
+                              ? 'notifications'
+                              : 'notifications-outline'
+                          }
+                          size={20}
+                          color="#FFFFFF"
+                        />
+
+                        <Text style={styles.selectedPlaceEventAlertButtonText}>
+                          {selectedPlaceAlertActive
+                            ? translate(
+                                'details.disablePlaceEventAlerts',
+                                'Desativar notificações deste local'
+                              )
+                            : translate(
+                                'details.enablePlaceEventAlerts',
+                                'Ativar notificações deste local'
+                              )}
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  <Text style={styles.selectedPlaceEventAlertHint}>
+                    {translate(
+                      'details.placeEventAlertHint',
+                      'Você receberá notificações ao se aproximar deste local caso existam eventos próximos na região.'
+                    )}
+                  </Text>
+                </>
+              ) : null}
+
+              {events.length === 0 ? (
+                <Text style={styles.emptySectionText}>
+                  {translate(
+                    'details.noEvents',
+                    'Nenhum evento específico deste local foi encontrado agora.'
+                  )}
+                </Text>
+              ) : (
+                <ScrollView
+                  style={styles.eventsScroll}
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator
+                >
+                  {events.map((event) => (
+                  <TouchableOpacity
+                    key={event.id}
+                    style={styles.eventCard}
+                    activeOpacity={event.url ? 0.82 : 1}
+                    onPress={() => openEventUrl(event)}
+                    disabled={!event.url}
+                  >
                   {event.image ? (
                     <Image
                       source={{ uri: event.image }}
@@ -1559,54 +2358,70 @@ export default function DetailsScreen() {
 
                   <View style={styles.eventContent}>
                     <View style={styles.eventHeader}>
-                      <Text style={styles.eventTitle}>{event.title}</Text>
+                      <Text style={styles.eventTitle}>{event.name}</Text>
 
-                      <View
-                        style={[
-                          styles.eventPriceBadge,
-                          {
-                            backgroundColor: event.isFree
-                              ? '#DCFCE7'
-                              : '#FEF3C7',
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.eventPriceText,
-                            {
-                              color: event.isFree ? '#16A34A' : '#D97706',
-                            },
-                          ]}
-                        >
-                          {event.isFree ? translate('details.free', 'Gratuito') : translate('details.paid', 'Pago')}
+                      <View style={styles.eventPriceBadge}>
+                        <Text style={styles.eventPriceText}>
+                          {translate('details.realEvent', 'Evento real')}
                         </Text>
                       </View>
                     </View>
 
                     <Text style={styles.eventDate}>
-                      📅 {formatEventDate(event.date)} • {event.startTime}
-                      {event.endTime ? ` às ${event.endTime}` : ''}
+                      📅 {formatEventDate(event.startDate || event.dateTime)} •{' '}
+                      {formatEventTime(event.startTime)}
                     </Text>
 
-                    <Text style={styles.eventDescription} numberOfLines={2}>
-                      {event.description}
-                    </Text>
+                    {event.description ? (
+                      <Text style={styles.eventDescription} numberOfLines={2}>
+                        {event.description}
+                      </Text>
+                    ) : (
+                      <Text style={styles.eventDescription} numberOfLines={2}>
+                        {translate(
+                          'details.ticketmasterEventDescription',
+                          'Evento encontrado em uma API externa de eventos.'
+                        )}
+                      </Text>
+                    )}
 
                     <View style={styles.eventFooter}>
                       <View style={styles.eventCategoryBadge}>
                         <Text style={styles.eventCategoryText}>
-                          {event.category}
+                          {event.source || 'ticketmaster'}
                         </Text>
                       </View>
 
                       <Text style={styles.eventPlace} numberOfLines={1}>
-                        {event.placeName}
+                        {event.venueName ||
+                          event.address ||
+                          translate('details.venueUnavailable', 'Local não informado')}
                       </Text>
                     </View>
+
+                    {event.city || event.state ? (
+                      <Text style={styles.eventAddress} numberOfLines={1}>
+                        {[event.city, event.state].filter(Boolean).join(' - ')}
+                      </Text>
+                    ) : null}
+
+                    {event.url ? (
+                      <View style={styles.eventLinkRow}>
+                        <Ionicons
+                          name="open-outline"
+                          size={16}
+                          color="#2563EB"
+                        />
+                        <Text style={styles.eventLinkText}>
+                          {translate('details.openEvent', 'Abrir evento')}
+                        </Text>
+                      </View>
+                    ) : null}
                   </View>
-                </View>
-              ))}
+                  </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
             </View>
           )}
         </AccordionSection>
@@ -1658,227 +2473,263 @@ export default function DetailsScreen() {
           isOpen={openSections.accessibility}
           onPress={() => toggleSection('accessibility')}
         >
-          <View
-            style={[
-              styles.accessibilityBadge,
-              { backgroundColor: `${accessibilityLevel.color}20` },
-            ]}
-          >
-            <Text
-              style={[
-                styles.accessibilityBadgeText,
-                { color: accessibilityLevel.color },
-              ]}
-            >
-              {accessibilityLevel.label}
-            </Text>
-          </View>
-
-          <Text style={styles.accessibilityDescription}>
-            {translate('details.accessibilityDescription', 'Avaliações colaborativas sobre acessibilidade do local.')}
-          </Text>
-
-          {accessibilitySummary && accessibilitySummary.total > 0 ? (
-            <View style={styles.accessibilityList}>
-              {ACCESSIBILITY_FIELDS.map((field) => {
-                const result = getFieldQualityResult(field);
-
-                return (
-                  <View key={field} style={styles.accessibilityItem}>
-                    <View style={styles.accessibilityItemLeft}>
-                      <Ionicons
-                        name={getAccessibilityFieldIcon(field)}
-                        size={20}
-                        color="#64748B"
-                      />
-
-                      <Text style={styles.accessibilityItemLabel}>
-                        {getAccessibilityFieldLabel(field)}
-                      </Text>
-                    </View>
-
-                    <View
-                      style={[
-                        styles.accessibilityStatus,
-                        { backgroundColor: result.color },
-                      ]}
-                    >
-                      <Text style={styles.accessibilityStatusText}>
-                        {result.label}
-                      </Text>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          ) : (
+          {isOfflineMode ? (
             <Text style={styles.emptySectionText}>
-              {translate('details.noAccessibilityYet', 'Nenhuma avaliação de acessibilidade ainda.')}
+              Avaliações de acessibilidade disponíveis apenas online.
             </Text>
-          )}
-
-          <View style={styles.accessibilityFormBox}>
-            <Text style={styles.accessibilityFormTitle}>
-              {translate('details.evaluateAccessibility', 'Avaliar acessibilidade')}
-            </Text>
-
-            <Text style={styles.accessibilityFormDescription}>
-              {translate('details.accessibilityHelp', 'Ajude outras pessoas avaliando a acessibilidade deste local.')}
-            </Text>
-
-            {ACCESSIBILITY_FIELDS.map((field) => {
-              const qualityField = `${field}Quality` as keyof AccessibilityForm;
-              const availability = accessibilityForm[field];
-              const quality = accessibilityForm[
-                qualityField
-              ] as AccessibilityQuality;
-
-              return (
-                <View key={field} style={styles.accessibilityFormItem}>
-                  <View style={styles.accessibilityFormHeader}>
-                    <Ionicons
-                      name={getAccessibilityFieldIcon(field)}
-                      size={20}
-                      color="#64748B"
-                    />
-
-                    <Text style={styles.accessibilityFormLabel}>
-                      {getAccessibilityFieldLabel(field)}
-                    </Text>
-                  </View>
-
-                  <View style={styles.accessibilityOptions}>
-                    {(['yes', 'no', 'unknown'] as AccessibilityAvailability[]).map(
-                      (option) => {
-                        const selected = availability === option;
-
-                        return (
-                          <TouchableOpacity
-                            key={option}
-                            activeOpacity={0.8}
-                            style={[
-                              styles.accessibilityOption,
-                              selected && styles.accessibilityOptionSelected,
-                            ]}
-                            onPress={() => setAvailability(field, option)}
-                          >
-                            <Text
-                              style={[
-                                styles.accessibilityOptionText,
-                                selected &&
-                                styles.accessibilityOptionTextSelected,
-                              ]}
-                            >
-                              {getAvailabilityLabel(option)}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      }
-                    )}
-                  </View>
-
-                  {availability === 'yes' ? (
-                    <>
-                      <Text style={styles.accessibilityQualityTitle}>
-                        {translate('details.howDoYouRate', 'Como você avalia?')}
-                      </Text>
-
-                      <View style={styles.accessibilityOptions}>
-                        {(['good', 'partial', 'bad'] as AccessibilityQuality[]).map(
-                          (option) => {
-                            const selected = quality === option;
-
-                            return (
-                              <TouchableOpacity
-                                key={option}
-                                activeOpacity={0.8}
-                                style={[
-                                  styles.accessibilityOption,
-                                  {
-                                    borderColor: getQualityColor(option),
-                                  },
-                                  selected && {
-                                    backgroundColor: getQualityColor(option),
-                                  },
-                                ]}
-                                onPress={() => setQuality(field, option)}
-                              >
-                                <Text
-                                  style={[
-                                    styles.accessibilityOptionText,
-                                    { color: getQualityColor(option) },
-                                    selected && { color: '#FFFFFF' },
-                                  ]}
-                                >
-                                  {getQualityLabel(option)}
-                                </Text>
-                              </TouchableOpacity>
-                            );
-                          }
-                        )}
-                      </View>
-                    </>
-                  ) : null}
-                </View>
-              );
-            })}
-
-            <TextInput
-              style={styles.accessibilityInput}
-              placeholder={translate('details.accessibilityPlaceholder', 'Observações sobre acessibilidade...')}
-              placeholderTextColor="#94A3B8"
-              value={accessibilityForm.comment}
-              onChangeText={(text) =>
-                setAccessibilityForm((prev) => ({
-                  ...prev,
-                  comment: text,
-                }))
-              }
-              multiline
-            />
-
-            <TouchableOpacity
-              style={styles.accessibilitySaveButton}
-              activeOpacity={0.8}
-              onPress={handleSaveAccessibilityReview}
-              disabled={accessibilityLoading}
-            >
-              {accessibilityLoading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <Text style={styles.accessibilitySaveButtonText}>
-                  {translate('details.saveAccessibilityReview', 'Salvar avaliação de acessibilidade')}
+          ) : (
+            <>
+              <View
+                style={[
+                  styles.accessibilityBadge,
+                  { backgroundColor: `${accessibilityLevel.color}20` },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.accessibilityBadgeText,
+                    { color: accessibilityLevel.color },
+                  ]}
+                >
+                  {accessibilityLevel.label}
                 </Text>
-              )}
-            </TouchableOpacity>
+              </View>
 
-            <Text style={styles.accessibilityPrivacyText}>
-              {translate(
-                'details.publicAccessibilityReview',
-                'Sua avaliação é pública e ajuda outras pessoas.'
-              )}
-            </Text>
-          </View>
-
-          {accessibilityComments.length > 0 ? (
-            <View style={styles.accessibilityCommentsBox}>
-              <Text style={styles.accessibilityCommentsTitle}>
-                {translate('details.userObservations', 'Observações dos usuários')}
+              <Text style={styles.accessibilityDescription}>
+                {translate(
+                  'details.accessibilityDescription',
+                  'Avaliações colaborativas sobre acessibilidade do local.'
+                )}
               </Text>
 
-              {accessibilityComments.map((item) => (
-                <View key={item._id} style={styles.accessibilityCommentCard}>
-                  <Text style={styles.accessibilityCommentUser}>
-                    {item.user?.name || translate('profile.defaultUserName', 'Usuário')}
+              {accessibilitySummary && accessibilitySummary.total > 0 ? (
+                <View style={styles.accessibilityList}>
+                  {ACCESSIBILITY_FIELDS.map((field) => {
+                    const result = getFieldQualityResult(field);
+
+                    return (
+                      <View key={field} style={styles.accessibilityItem}>
+                        <View style={styles.accessibilityItemLeft}>
+                          <Ionicons
+                            name={getAccessibilityFieldIcon(field)}
+                            size={20}
+                            color="#64748B"
+                          />
+
+                          <Text style={styles.accessibilityItemLabel}>
+                            {getAccessibilityFieldLabel(field)}
+                          </Text>
+                        </View>
+
+                        <View
+                          style={[
+                            styles.accessibilityStatus,
+                            { backgroundColor: result.color },
+                          ]}
+                        >
+                          <Text style={styles.accessibilityStatusText}>
+                            {result.label}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : (
+                <Text style={styles.emptySectionText}>
+                  {translate(
+                    'details.noAccessibilityYet',
+                    'Nenhuma avaliação de acessibilidade ainda.'
+                  )}
+                </Text>
+              )}
+
+              <View style={styles.accessibilityFormBox}>
+                <Text style={styles.accessibilityFormTitle}>
+                  {translate(
+                    'details.evaluateAccessibility',
+                    'Avaliar acessibilidade'
+                  )}
+                </Text>
+
+                <Text style={styles.accessibilityFormDescription}>
+                  {translate(
+                    'details.accessibilityHelp',
+                    'Ajude outras pessoas avaliando a acessibilidade deste local.'
+                  )}
+                </Text>
+
+                {ACCESSIBILITY_FIELDS.map((field) => {
+                  const qualityField =
+                    `${field}Quality` as keyof AccessibilityForm;
+                  const availability = accessibilityForm[field];
+                  const quality = accessibilityForm[
+                    qualityField
+                  ] as AccessibilityQuality;
+
+                  return (
+                    <View key={field} style={styles.accessibilityFormItem}>
+                      <View style={styles.accessibilityFormHeader}>
+                        <Ionicons
+                          name={getAccessibilityFieldIcon(field)}
+                          size={20}
+                          color="#64748B"
+                        />
+
+                        <Text style={styles.accessibilityFormLabel}>
+                          {getAccessibilityFieldLabel(field)}
+                        </Text>
+                      </View>
+
+                      <View style={styles.accessibilityOptions}>
+                        {(
+                          ['yes', 'no', 'unknown'] as AccessibilityAvailability[]
+                        ).map((option) => {
+                          const selected = availability === option;
+
+                          return (
+                            <TouchableOpacity
+                              key={option}
+                              activeOpacity={0.8}
+                              style={[
+                                styles.accessibilityOption,
+                                selected &&
+                                  styles.accessibilityOptionSelected,
+                              ]}
+                              onPress={() => setAvailability(field, option)}
+                            >
+                              <Text
+                                style={[
+                                  styles.accessibilityOptionText,
+                                  selected &&
+                                    styles.accessibilityOptionTextSelected,
+                                ]}
+                              >
+                                {getAvailabilityLabel(option)}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+
+                      {availability === 'yes' ? (
+                        <>
+                          <Text style={styles.accessibilityQualityTitle}>
+                            {translate(
+                              'details.howDoYouRate',
+                              'Como você avalia?'
+                            )}
+                          </Text>
+
+                          <View style={styles.accessibilityOptions}>
+                            {(
+                              ['good', 'partial', 'bad'] as AccessibilityQuality[]
+                            ).map((option) => {
+                              const selected = quality === option;
+
+                              return (
+                                <TouchableOpacity
+                                  key={option}
+                                  activeOpacity={0.8}
+                                  style={[
+                                    styles.accessibilityOption,
+                                    { borderColor: getQualityColor(option) },
+                                    selected && {
+                                      backgroundColor: getQualityColor(option),
+                                    },
+                                  ]}
+                                  onPress={() => setQuality(field, option)}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.accessibilityOptionText,
+                                      { color: getQualityColor(option) },
+                                      selected && { color: '#FFFFFF' },
+                                    ]}
+                                  >
+                                    {getQualityLabel(option)}
+                                  </Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        </>
+                      ) : null}
+                    </View>
+                  );
+                })}
+
+                <TextInput
+                  style={styles.accessibilityInput}
+                  placeholder={translate(
+                    'details.accessibilityPlaceholder',
+                    'Observações sobre acessibilidade...'
+                  )}
+                  placeholderTextColor="#94A3B8"
+                  value={accessibilityForm.comment}
+                  onChangeText={(text) =>
+                    setAccessibilityForm((prev) => ({
+                      ...prev,
+                      comment: text,
+                    }))
+                  }
+                  multiline
+                />
+
+                <TouchableOpacity
+                  style={styles.accessibilitySaveButton}
+                  activeOpacity={0.8}
+                  onPress={handleSaveAccessibilityReview}
+                  disabled={accessibilityLoading}
+                >
+                  {accessibilityLoading ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.accessibilitySaveButtonText}>
+                      {translate(
+                        'details.saveAccessibilityReview',
+                        'Salvar avaliação de acessibilidade'
+                      )}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+
+                <Text style={styles.accessibilityPrivacyText}>
+                  {translate(
+                    'details.publicAccessibilityReview',
+                    'Sua avaliação é pública e ajuda outras pessoas.'
+                  )}
+                </Text>
+              </View>
+
+              {accessibilityComments.length > 0 ? (
+                <View style={styles.accessibilityCommentsBox}>
+                  <Text style={styles.accessibilityCommentsTitle}>
+                    {translate(
+                      'details.userObservations',
+                      'Observações dos usuários'
+                    )}
                   </Text>
 
-                  <Text style={styles.accessibilityCommentText}>
-                    {item.comment}
-                  </Text>
+                  {accessibilityComments.map((item) => (
+                    <View
+                      key={item._id}
+                      style={styles.accessibilityCommentCard}
+                    >
+                      <Text style={styles.accessibilityCommentUser}>
+                        {item.user?.name ||
+                          translate('profile.defaultUserName', 'Usuário')}
+                      </Text>
+
+                      <Text style={styles.accessibilityCommentText}>
+                        {item.comment}
+                      </Text>
+                    </View>
+                  ))}
                 </View>
-              ))}
-            </View>
-          ) : null}
+              ) : null}
+            </>
+          )}
         </AccordionSection>
 
         <AccordionSection
@@ -1887,115 +2738,144 @@ export default function DetailsScreen() {
           isOpen={openSections.comments}
           onPress={() => toggleSection('comments')}
         >
-          <View style={styles.addCommentBox}>
-            <Text style={styles.addCommentTitle}>
-              {editingReviewId ? translate('details.editComment', 'Editar comentário') : translate('details.addComment', 'Adicionar comentário')}
-            </Text>
-
-            <View style={styles.starsRow}>
-              {[1, 2, 3, 4, 5].map((star) => (
-                <TouchableOpacity
-                  key={star}
-                  activeOpacity={0.7}
-                  onPress={() => setUserRating(star)}
-                >
-                  <Ionicons
-                    name={star <= userRating ? 'star' : 'star-outline'}
-                    size={28}
-                    color="#FACC15"
-                  />
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <TextInput
-              style={styles.commentInput}
-              placeholder={translate(
-                'details.writeExperience',
-                'Escreva sua experiência...'
-              )}
-              placeholderTextColor="#94A3B8"
-              value={userComment}
-              onChangeText={setUserComment}
-              multiline
-            />
-
-            <TouchableOpacity
-              style={styles.publishButton}
-              activeOpacity={0.8}
-              onPress={handleSaveReview}
-            >
-              <Text style={styles.publishButtonText}>
-                {editingReviewId
-                  ? 'Salvar alteração'
-                  : translate('details.publishComment', 'Publicar comentário')}
-              </Text>
-            </TouchableOpacity>
-
-            {editingReviewId ? (
-              <TouchableOpacity
-                style={styles.cancelEditButton}
-                activeOpacity={0.8}
-                onPress={handleCancelEdit}
-              >
-                <Text style={styles.cancelEditText}>{translate('details.cancelEdit', 'Cancelar edição')}</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-
-          {reviews.length === 0 ? (
-            <Text style={styles.noCommentsText}>
-              {translate(
-                'details.noComments',
-                'Nenhum comentário ainda. Seja o primeiro a comentar.'
-              )}
+          {isOfflineMode ? (
+            <Text style={styles.emptySectionText}>
+              Comentários disponíveis apenas online.
             </Text>
           ) : (
-            reviews.map((review) => {
-              const owner = isReviewOwner(review);
+            <>
+              <View style={styles.addCommentBox}>
+                <Text style={styles.addCommentTitle}>
+                  {editingReviewId
+                    ? translate('details.editComment', 'Editar comentário')
+                    : translate('details.addComment', 'Adicionar comentário')}
+                </Text>
 
-              return (
-                <View key={review._id} style={styles.commentCard}>
-                  <View style={styles.commentHeader}>
-                    <Text style={styles.commentUser}>
-                      {owner ? translate('details.you', 'Você') : review.userName || translate('profile.defaultUserName', 'Usuário')}
-                    </Text>
-
-                    <Text style={styles.commentDate}>
-                      {new Date(review.createdAt).toLocaleDateString(i18n.language === 'en' ? 'en-US' : i18n.language === 'es' ? 'es-ES' : 'pt-BR')}
-                    </Text>
-                  </View>
-
-                  <Text style={styles.commentRating}>
-                    {'⭐'.repeat(review.rating)}
-                  </Text>
-
-                  <Text style={styles.commentText}>{review.comment}</Text>
-
-                  {owner ? (
-                    <View style={styles.commentActions}>
-                      <TouchableOpacity
-                        activeOpacity={0.8}
-                        onPress={() => handleEditReview(review)}
-                      >
-                        <Text style={styles.editText}>{translate('details.edit', 'Editar')}</Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        activeOpacity={0.8}
-                        onPress={() => handleDeleteReview(review)}
-                      >
-                        <Text style={styles.deleteText}>{translate('details.delete', 'Excluir')}</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ) : null}
+                <View style={styles.starsRow}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <TouchableOpacity
+                      key={star}
+                      activeOpacity={0.7}
+                      onPress={() => setUserRating(star)}
+                    >
+                      <Ionicons
+                        name={star <= userRating ? 'star' : 'star-outline'}
+                        size={28}
+                        color="#FACC15"
+                      />
+                    </TouchableOpacity>
+                  ))}
                 </View>
-              );
-            })
+
+                <TextInput
+                  style={styles.commentInput}
+                  placeholder={translate(
+                    'details.writeExperience',
+                    'Escreva sua experiência...'
+                  )}
+                  placeholderTextColor="#94A3B8"
+                  value={userComment}
+                  onChangeText={setUserComment}
+                  multiline
+                />
+
+                <TouchableOpacity
+                  style={styles.publishButton}
+                  activeOpacity={0.8}
+                  onPress={handleSaveReview}
+                >
+                  <Text style={styles.publishButtonText}>
+                    {editingReviewId
+                      ? 'Salvar alteração'
+                      : translate(
+                          'details.publishComment',
+                          'Publicar comentário'
+                        )}
+                  </Text>
+                </TouchableOpacity>
+
+                {editingReviewId ? (
+                  <TouchableOpacity
+                    style={styles.cancelEditButton}
+                    activeOpacity={0.8}
+                    onPress={handleCancelEdit}
+                  >
+                    <Text style={styles.cancelEditText}>
+                      {translate('details.cancelEdit', 'Cancelar edição')}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+              {reviews.length === 0 ? (
+                <Text style={styles.noCommentsText}>
+                  {translate(
+                    'details.noComments',
+                    'Nenhum comentário ainda. Seja o primeiro a comentar.'
+                  )}
+                </Text>
+              ) : (
+                reviews.map((review) => {
+                  const owner = isReviewOwner(review);
+
+                  return (
+                    <View key={review._id} style={styles.commentCard}>
+                      <View style={styles.commentHeader}>
+                        <Text style={styles.commentUser}>
+                          {owner
+                            ? translate('details.you', 'Você')
+                            : review.userName ||
+                              translate('profile.defaultUserName', 'Usuário')}
+                        </Text>
+
+                        <Text style={styles.commentDate}>
+                          {new Date(review.createdAt).toLocaleDateString(
+                            i18n.language === 'en'
+                              ? 'en-US'
+                              : i18n.language === 'es'
+                                ? 'es-ES'
+                                : 'pt-BR'
+                          )}
+                        </Text>
+                      </View>
+
+                      <Text style={styles.commentRating}>
+                        {'⭐'.repeat(review.rating)}
+                      </Text>
+
+                      <Text style={styles.commentText}>{review.comment}</Text>
+
+                      {owner ? (
+                        <View style={styles.commentActions}>
+                          <TouchableOpacity
+                            activeOpacity={0.8}
+                            onPress={() => handleEditReview(review)}
+                          >
+                            <Text style={styles.editText}>
+                              {translate('details.edit', 'Editar')}
+                            </Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            activeOpacity={0.8}
+                            onPress={() => handleDeleteReview(review)}
+                          >
+                            <Text style={styles.deleteText}>
+                              {translate('details.delete', 'Excluir')}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })
+              )}
+            </>
           )}
         </AccordionSection>
       </View>
-    </ScrollView>
+      </ScrollView>
+    </DetailsThemeContext.Provider>
   );
 }
 
@@ -2014,6 +2894,9 @@ function AccordionSection({
   onPress: () => void;
   children: React.ReactNode;
 }) {
+  const colors = useDetailsTheme();
+  const styles = useMemo(() => createDetailsStyles(colors), [colors]);
+
   return (
     <View style={styles.accordionCard}>
       <TouchableOpacity
@@ -2047,6 +2930,9 @@ function InfoRow({
   label: string;
   value: string;
 }) {
+  const colors = useDetailsTheme();
+  const styles = useMemo(() => createDetailsStyles(colors), [colors]);
+
   return (
     <View style={styles.infoRow}>
       <View style={styles.infoIcon}>
@@ -2061,25 +2947,26 @@ function InfoRow({
   );
 }
 
-const styles = StyleSheet.create({
+function createDetailsStyles(colors: DetailsThemeColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
   },
   loadingWrapper: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
   },
   emptyText: {
-    color: '#64748B',
+    color: colors.muted,
     fontSize: 14,
   },
   imageWrapper: {
     width: '100%',
     height: 280,
-    backgroundColor: '#CBD5E1',
+    backgroundColor: colors.imageBackground,
   },
   image: {
     width: '100%',
@@ -2092,11 +2979,27 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.card,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.border,
+  },
+  voiceGuideButton: {
+    position: 'absolute',
+    top: 48,
+    right: 108,
+    width: 42,
+    height: 42,
+    borderRadius: 18,
+    backgroundColor: 'rgba(37, 99, 235, 0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  voiceGuideButtonActive: {
+    backgroundColor: 'rgba(22, 163, 74, 0.95)',
   },
   shareButton: {
     position: 'absolute',
@@ -2151,6 +3054,42 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 32,
   },
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 16,
+  },
+  offlineBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#92400E',
+    fontWeight: '800',
+    lineHeight: 18,
+  },
+  voiceGuideBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#DBEAFE',
+    borderColor: '#3B82F6',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 16,
+  },
+  voiceGuideBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#1E3A8A',
+    fontWeight: '800',
+    lineHeight: 18,
+  },
   category: {
     fontSize: 12,
     color: '#3B82F6',
@@ -2160,26 +3099,26 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 26,
     fontWeight: '800',
-    color: '#0F172A',
+    color: colors.text,
     marginBottom: 8,
   },
   rating: {
     fontSize: 16,
-    color: '#475569',
+    color: colors.muted,
     marginBottom: 14,
   },
   description: {
     fontSize: 15,
-    color: '#475569',
+    color: colors.muted,
     lineHeight: 22,
     marginBottom: 16,
   },
   checkInCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.card,
     borderRadius: 18,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.border,
     marginBottom: 16,
   },
   checkInTop: {
@@ -2192,7 +3131,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: colors.blueSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2201,25 +3140,47 @@ const styles = StyleSheet.create({
   },
   checkInTitle: {
     fontSize: 16,
-    color: '#0F172A',
+    color: colors.text,
     fontWeight: '900',
     marginBottom: 3,
   },
   checkInDescription: {
     fontSize: 13,
-    color: '#64748B',
+    color: colors.muted,
     fontWeight: '600',
     lineHeight: 18,
   },
   checkInStatsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.cardSoft,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.border,
     paddingVertical: 12,
     marginBottom: 12,
+  },
+  checkInStatusItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 8,
+  },
+  checkInStatusText: {
+    fontSize: 13,
+    color: colors.muted,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  checkInStatusTextDone: {
+    color: '#16A34A',
+  },
+  checkInDivider: {
+    width: 1,
+    height: 34,
+    backgroundColor: colors.buttonSecondary,
   },
   checkInStatItem: {
     flex: 1,
@@ -2227,20 +3188,15 @@ const styles = StyleSheet.create({
   },
   checkInStatValue: {
     fontSize: 20,
-    color: '#0F172A',
+    color: colors.text,
     fontWeight: '900',
     marginBottom: 2,
   },
   checkInStatLabel: {
     fontSize: 12,
-    color: '#64748B',
+    color: colors.muted,
     fontWeight: '700',
     textAlign: 'center',
-  },
-  checkInDivider: {
-    width: 1,
-    height: 34,
-    backgroundColor: '#E2E8F0',
   },
   badgeBox: {
     flexDirection: 'row',
@@ -2283,12 +3239,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
   },
+  disabledButton: {
+    opacity: 0.55,
+  },
   addressCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.card,
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.border,
     marginBottom: 16,
   },
   infoRow: {
@@ -2300,7 +3259,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 12,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: colors.blueSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2309,12 +3268,12 @@ const styles = StyleSheet.create({
   },
   infoLabel: {
     fontSize: 12,
-    color: '#94A3B8',
+    color: colors.placeholder,
     marginBottom: 2,
   },
   infoValue: {
     fontSize: 14,
-    color: '#0F172A',
+    color: colors.text,
     fontWeight: '600',
   },
   actionButtons: {
@@ -2363,10 +3322,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   accordionCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.card,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.border,
     marginBottom: 16,
     overflow: 'hidden',
   },
@@ -2393,23 +3352,23 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 17,
     fontWeight: '800',
-    color: '#0F172A',
+    color: colors.text,
   },
   emptySectionText: {
     fontSize: 14,
-    color: '#64748B',
+    color: colors.muted,
     lineHeight: 20,
     paddingTop: 12,
   },
-  weatherLoading: {
+  inlineLoading: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     paddingTop: 14,
   },
-  weatherLoadingText: {
+  inlineLoadingText: {
     fontSize: 14,
-    color: '#64748B',
+    color: colors.muted,
     fontWeight: '600',
   },
   forecastWrapper: {
@@ -2417,7 +3376,7 @@ const styles = StyleSheet.create({
   },
   forecastCity: {
     fontSize: 14,
-    color: '#64748B',
+    color: colors.muted,
     fontWeight: '700',
     marginBottom: 8,
   },
@@ -2428,7 +3387,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 7,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: colors.separator,
   },
   forecastDateWrapper: {
     flexDirection: 'row',
@@ -2445,325 +3404,66 @@ const styles = StyleSheet.create({
   },
   forecastDate: {
     fontSize: 14,
-    color: '#0F172A',
+    color: colors.text,
     fontWeight: '800',
     textTransform: 'capitalize',
   },
   forecastDescription: {
     fontSize: 13,
-    color: '#64748B',
+    color: colors.muted,
     fontWeight: '600',
     textTransform: 'capitalize',
   },
   forecastTemp: {
     fontSize: 15,
-    color: '#0F172A',
+    color: colors.text,
     fontWeight: '900',
-  },
-  visitHourRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 9,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  visitDay: {
-    fontSize: 14,
-    color: '#334155',
-    fontWeight: '600',
-  },
-  visitTime: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  safetyBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    marginTop: 14,
-    marginBottom: 10,
-  },
-  safetyText: {
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  safetyDescription: {
-    fontSize: 14,
-    color: '#475569',
-    lineHeight: 21,
-  },
-  accessibilityBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    marginTop: 14,
-    marginBottom: 10,
-  },
-  accessibilityBadgeText: {
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  accessibilityDescription: {
-    fontSize: 14,
-    color: '#475569',
-    lineHeight: 21,
-    marginBottom: 16,
-  },
-  accessibilityList: {
-    marginBottom: 16,
-  },
-  accessibilityItem: {
-    minHeight: 58,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 9,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    gap: 10,
-  },
-  accessibilityItemLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  accessibilityItemLabel: {
-    flex: 1,
-    fontSize: 14,
-    color: '#334155',
-    fontWeight: '800',
-  },
-  accessibilityStatus: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
-    minWidth: 74,
-    alignItems: 'center',
-  },
-  accessibilityStatusText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  accessibilityFormBox: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 18,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginTop: 14,
-  },
-  accessibilityFormTitle: {
-    fontSize: 17,
-    fontWeight: '900',
-    color: '#0F172A',
-    marginBottom: 8,
-  },
-  accessibilityFormDescription: {
-    fontSize: 13,
-    color: '#64748B',
-    lineHeight: 19,
-    marginBottom: 18,
-  },
-  accessibilityFormItem: {
-    marginBottom: 20,
-  },
-  accessibilityFormHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 10,
-  },
-  accessibilityFormLabel: {
-    fontSize: 15,
-    color: '#334155',
-    fontWeight: '900',
-  },
-  accessibilityQualityTitle: {
-    fontSize: 13,
-    color: '#64748B',
-    fontWeight: '700',
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  accessibilityOptions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  accessibilityOption: {
-    minHeight: 42,
-    minWidth: 88,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 999,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  accessibilityOptionSelected: {
-    backgroundColor: '#2563EB',
-    borderColor: '#2563EB',
-  },
-  accessibilityOptionText: {
-    fontSize: 13,
-    color: '#475569',
-    fontWeight: '900',
-  },
-  accessibilityOptionTextSelected: {
-    color: '#FFFFFF',
-  },
-  accessibilityInput: {
-    minHeight: 92,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    padding: 12,
-    fontSize: 14,
-    color: '#0F172A',
-    textAlignVertical: 'top',
-    marginBottom: 14,
-  },
-  accessibilitySaveButton: {
-    minHeight: 48,
-    borderRadius: 14,
-    backgroundColor: '#2563EB',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-  },
-  accessibilitySaveButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '900',
-    textAlign: 'center',
-  },
-  accessibilityPrivacyText: {
-    marginTop: 12,
-    color: '#64748B',
-    fontSize: 12,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  accessibilityCommentsBox: {
-    marginTop: 14,
-  },
-  accessibilityCommentsTitle: {
-    fontSize: 14,
-    color: '#0F172A',
-    fontWeight: '900',
-    marginBottom: 10,
-  },
-  accessibilityCommentCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 8,
-  },
-  accessibilityCommentUser: {
-    fontSize: 13,
-    color: '#0F172A',
-    fontWeight: '900',
-    marginBottom: 4,
-  },
-  accessibilityCommentText: {
-    fontSize: 13,
-    color: '#475569',
-    lineHeight: 19,
-  },
-  addCommentBox: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginTop: 14,
-    marginBottom: 14,
-  },
-  addCommentTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginBottom: 10,
-  },
-  starsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-  },
-  commentInput: {
-    minHeight: 90,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    padding: 12,
-    fontSize: 14,
-    color: '#0F172A',
-    textAlignVertical: 'top',
-    marginBottom: 12,
-  },
-  publishButton: {
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: '#3B82F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  publishButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  cancelEditButton: {
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: '#E2E8F0',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 10,
-  },
-  cancelEditText: {
-    color: '#334155',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-
-  eventsLoading: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingTop: 14,
-  },
-  eventsLoadingText: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '600',
   },
   eventsWrapper: {
     paddingTop: 12,
   },
+  eventsScroll: {
+    maxHeight: 430,
+  },
+  selectedPlaceEventAlertButton: {
+    minHeight: 48,
+    borderRadius: 14,
+    backgroundColor: '#9333EA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+  },
+  selectedPlaceEventAlertButtonActive: {
+    backgroundColor: '#16A34A',
+  },
+  selectedPlaceEventAlertButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  selectedPlaceEventAlertHint: {
+    fontSize: 12,
+    color: colors.muted,
+    fontWeight: '700',
+    lineHeight: 17,
+    marginBottom: 14,
+  },
   eventCard: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.cardSoft,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.border,
     overflow: 'hidden',
     marginBottom: 14,
   },
   eventImage: {
     width: '100%',
     height: 130,
-    backgroundColor: '#CBD5E1',
+    backgroundColor: colors.imageBackground,
   },
   eventContent: {
     padding: 12,
@@ -2779,16 +3479,18 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: '900',
-    color: '#0F172A',
+    color: colors.text,
   },
   eventPriceBadge: {
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 999,
+    backgroundColor: '#EDE9FE',
   },
   eventPriceText: {
     fontSize: 11,
     fontWeight: '900',
+    color: '#7E22CE',
   },
   eventDate: {
     fontSize: 13,
@@ -2798,7 +3500,7 @@ const styles = StyleSheet.create({
   },
   eventDescription: {
     fontSize: 13,
-    color: '#475569',
+    color: colors.muted,
     lineHeight: 19,
     marginBottom: 12,
   },
@@ -2824,21 +3526,315 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'right',
     fontSize: 12,
-    color: '#64748B',
+    color: colors.muted,
     fontWeight: '700',
+  },
+  eventAddress: {
+    marginTop: 8,
+    fontSize: 12,
+    color: colors.muted,
+    fontWeight: '700',
+  },
+  eventLinkRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  eventLinkText: {
+    color: '#2563EB',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  visitHourRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.separator,
+  },
+  visitDay: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  visitTime: {
+    fontSize: 14,
+    color: colors.muted,
+    fontWeight: '600',
+  },
+  safetyBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    marginTop: 14,
+    marginBottom: 10,
+  },
+  safetyText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  safetyDescription: {
+    fontSize: 14,
+    color: colors.muted,
+    lineHeight: 21,
+  },
+  accessibilityBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    marginTop: 14,
+    marginBottom: 10,
+  },
+  accessibilityBadgeText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  accessibilityDescription: {
+    fontSize: 14,
+    color: colors.muted,
+    lineHeight: 21,
+    marginBottom: 16,
+  },
+  accessibilityList: {
+    marginBottom: 16,
+  },
+  accessibilityItem: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.separator,
+    gap: 10,
+  },
+  accessibilityItemLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  accessibilityItemLabel: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.textSecondary,
+    fontWeight: '800',
+  },
+  accessibilityStatus: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    minWidth: 74,
+    alignItems: 'center',
+  },
+  accessibilityStatusText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  accessibilityFormBox: {
+    backgroundColor: colors.cardSoft,
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: 14,
+  },
+  accessibilityFormTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: colors.text,
+    marginBottom: 8,
+  },
+  accessibilityFormDescription: {
+    fontSize: 13,
+    color: colors.muted,
+    lineHeight: 19,
+    marginBottom: 18,
+  },
+  accessibilityFormItem: {
+    marginBottom: 20,
+  },
+  accessibilityFormHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  accessibilityFormLabel: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    fontWeight: '900',
+  },
+  accessibilityQualityTitle: {
+    fontSize: 13,
+    color: colors.muted,
+    fontWeight: '700',
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  accessibilityOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  accessibilityOption: {
+    minHeight: 42,
+    minWidth: 88,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  accessibilityOptionSelected: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  accessibilityOptionText: {
+    fontSize: 13,
+    color: colors.muted,
+    fontWeight: '900',
+  },
+  accessibilityOptionTextSelected: {
+    color: '#FFFFFF',
+  },
+  accessibilityInput: {
+    minHeight: 92,
+    backgroundColor: colors.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+    fontSize: 14,
+    color: colors.text,
+    textAlignVertical: 'top',
+    marginBottom: 14,
+  },
+  accessibilitySaveButton: {
+    minHeight: 48,
+    borderRadius: 14,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  accessibilitySaveButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  accessibilityPrivacyText: {
+    marginTop: 12,
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  accessibilityCommentsBox: {
+    marginTop: 14,
+  },
+  accessibilityCommentsTitle: {
+    fontSize: 14,
+    color: colors.text,
+    fontWeight: '900',
+    marginBottom: 10,
+  },
+  accessibilityCommentCard: {
+    backgroundColor: colors.cardSoft,
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 8,
+  },
+  accessibilityCommentUser: {
+    fontSize: 13,
+    color: colors.text,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  accessibilityCommentText: {
+    fontSize: 13,
+    color: colors.muted,
+    lineHeight: 19,
+  },
+  addCommentBox: {
+    backgroundColor: colors.cardSoft,
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: 14,
+    marginBottom: 14,
+  },
+  addCommentTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.text,
+    marginBottom: 10,
+  },
+  starsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  commentInput: {
+    minHeight: 90,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+    fontSize: 14,
+    color: colors.text,
+    textAlignVertical: 'top',
+    marginBottom: 12,
+  },
+  publishButton: {
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#3B82F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  publishButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  cancelEditButton: {
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: colors.buttonSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  cancelEditText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '800',
   },
   noCommentsText: {
     fontSize: 14,
-    color: '#64748B',
+    color: colors.muted,
     lineHeight: 20,
   },
   commentCard: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.cardSoft,
     borderRadius: 14,
     padding: 12,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.border,
   },
   commentHeader: {
     flexDirection: 'row',
@@ -2849,12 +3845,12 @@ const styles = StyleSheet.create({
   commentUser: {
     flex: 1,
     fontSize: 14,
-    color: '#0F172A',
+    color: colors.text,
     fontWeight: '800',
   },
   commentDate: {
     fontSize: 12,
-    color: '#94A3B8',
+    color: colors.placeholder,
     fontWeight: '600',
   },
   commentRating: {
@@ -2863,7 +3859,7 @@ const styles = StyleSheet.create({
   },
   commentText: {
     fontSize: 14,
-    color: '#475569',
+    color: colors.muted,
     lineHeight: 20,
   },
   commentActions: {
@@ -2881,21 +3877,5 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 13,
   },
-  checkInStatusItem: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 6,
-    paddingHorizontal: 8,
-  },
-  checkInStatusText: {
-    fontSize: 13,
-    color: '#64748B',
-    fontWeight: '900',
-    textAlign: 'center',
-  },
-  checkInStatusTextDone: {
-    color: '#16A34A',
-  },
-});
+  });
+}

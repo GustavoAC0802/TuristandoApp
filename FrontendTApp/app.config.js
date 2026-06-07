@@ -16,6 +16,7 @@ export default {
       backgroundColor: '#ffffff',
     },
     plugins: [
+      'expo-font',
       [
         'expo-local-authentication',
         {
@@ -31,14 +32,30 @@ export default {
             'Permita que o Turistando proteja sua sessão com biometria.',
         },
       ],
-      'expo-build-properties',
-      '@morrowdigital/watermelondb-expo-plugin',
+      [
+        'expo-build-properties',
+        {
+          android: {
+            newArchEnabled: false,
+          },
+          ios: {
+            newArchEnabled: false,
+          },
+        },
+      ],
+      [
+        '@morrowdigital/watermelondb-expo-plugin',
+        {
+          disableJsi: true,
+        },
+      ],
     ],
     ios: {
       supportsTablet: true,
       userInterfaceStyle: 'automatic',
     },
     android: {
+      package: 'com.gustavo.turistandoapp',
       softwareKeyboardLayoutMode: 'resize',
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
@@ -47,12 +64,18 @@ export default {
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
       userInterfaceStyle: 'automatic',
+      config: {
+        googleMaps: {
+          apiKey: process.env.GOOGLE_MAPS_API_KEY,
+        },
+      },
     },
     web: {
       favicon: './assets/favicon.png',
     },
     extra: {
       apiUrl: process.env.API_URL,
+      googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY,
     },
   },
 };

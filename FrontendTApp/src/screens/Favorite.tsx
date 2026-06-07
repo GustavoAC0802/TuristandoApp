@@ -29,6 +29,23 @@ export default function FavoritesScreen() {
   const dispatch = useDispatch<any>();
 
   const { items, loading } = useSelector((state: RootState) => state.favorites);
+  const theme = useSelector((state: RootState) => state.theme.mode);
+
+  const isDark = theme === 'dark';
+
+  const colors = {
+    background: isDark ? '#0F172A' : '#F8FAFC',
+    card: isDark ? '#1E293B' : '#FFFFFF',
+    cardBorder: isDark ? '#334155' : '#E2E8F0',
+    title: isDark ? '#F8FAFC' : '#0F172A',
+    text: isDark ? '#E2E8F0' : '#0F172A',
+    meta: isDark ? '#CBD5E1' : '#475569',
+    description: isDark ? '#CBD5E1' : '#64748B',
+    muted: isDark ? '#94A3B8' : '#94A3B8',
+    imageBackground: isDark ? '#334155' : '#CBD5E1',
+    removeButton: isDark ? '#0F172A' : '#FFFFFF',
+    removeButtonBorder: isDark ? '#475569' : '#E2E8F0',
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -46,6 +63,24 @@ export default function FavoritesScreen() {
     dispatch(removeFavorite(placeId));
   };
 
+  const getPlaceRating = (item: FavoritePlace) => {
+    const place = item as FavoritePlace & {
+      rating?: number;
+      averageRating?: number;
+      reviewsCount?: number;
+    };
+
+    if (typeof place.averageRating === 'number') {
+      return place.averageRating.toFixed(1);
+    }
+
+    if (typeof place.rating === 'number') {
+      return place.rating.toFixed(1);
+    }
+
+    return '0.0';
+  };
+
   const renderItem = ({ item }: { item: FavoritePlace }) => {
     const imageUrl =
       item.images?.[0] && item.images[0].startsWith('https://')
@@ -54,32 +89,83 @@ export default function FavoritesScreen() {
 
     return (
       <TouchableOpacity
-        style={styles.card}
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.cardBorder,
+          },
+        ]}
         activeOpacity={0.8}
         onPress={() => handleOpenDetails(item)}
       >
-        <Image source={{ uri: imageUrl }} style={styles.cardImage} />
+        <Image
+          source={{ uri: imageUrl }}
+          style={[
+            styles.cardImage,
+            {
+              backgroundColor: colors.imageBackground,
+            },
+          ]}
+        />
 
         <View style={styles.cardContent}>
-          <Text style={styles.cardTitle} numberOfLines={1}>
+          <Text
+            style={[
+              styles.cardTitle,
+              {
+                color: colors.text,
+              },
+            ]}
+            numberOfLines={1}
+          >
             {item.name}
           </Text>
 
-          <Text style={styles.cardMeta}>
-            ⭐ {typeof item.rating === 'number' ? item.rating.toFixed(1) : '0.0'}
+          <Text
+            style={[
+              styles.cardMeta,
+              {
+                color: colors.meta,
+              },
+            ]}
+          >
+            ⭐ {getPlaceRating(item)}
           </Text>
 
-          <Text style={styles.cardDescription} numberOfLines={2}>
-            {item.description}
+          <Text
+            style={[
+              styles.cardDescription,
+              {
+                color: colors.description,
+              },
+            ]}
+            numberOfLines={2}
+          >
+            {item.description || 'Sem descrição disponível.'}
           </Text>
 
-          <Text style={styles.cardAddress} numberOfLines={1}>
-            📍 {item.address}
+          <Text
+            style={[
+              styles.cardAddress,
+              {
+                color: colors.muted,
+              },
+            ]}
+            numberOfLines={1}
+          >
+            📍 {item.address || 'Endereço não informado'}
           </Text>
         </View>
 
         <TouchableOpacity
-          style={styles.removeButton}
+          style={[
+            styles.removeButton,
+            {
+              backgroundColor: colors.removeButton,
+              borderColor: colors.removeButtonBorder,
+            },
+          ]}
           activeOpacity={0.8}
           onPress={() => handleRemoveFavorite(item._id)}
         >
@@ -90,8 +176,24 @@ export default function FavoritesScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{t('favorites.title')}</Text>
+    <View
+      style={[
+        styles.container,
+        {
+          backgroundColor: colors.background,
+        },
+      ]}
+    >
+      <Text
+        style={[
+          styles.title,
+          {
+            color: colors.title,
+          },
+        ]}
+      >
+        {t('favorites.title')}
+      </Text>
 
       {loading ? (
         <View style={styles.emptyContainer}>
@@ -99,8 +201,27 @@ export default function FavoritesScreen() {
         </View>
       ) : items.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>{t('favorites.empty')}</Text>
-          <Text style={styles.helperText}>{t('favorites.helper')}</Text>
+          <Text
+            style={[
+              styles.emptyText,
+              {
+                color: colors.text,
+              },
+            ]}
+          >
+            {t('favorites.empty')}
+          </Text>
+
+          <Text
+            style={[
+              styles.helperText,
+              {
+                color: colors.description,
+              },
+            ]}
+          >
+            {t('favorites.helper')}
+          </Text>
         </View>
       ) : (
         <FlatList
@@ -118,83 +239,85 @@ export default function FavoritesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
     paddingHorizontal: 16,
     paddingTop: 16,
   },
+
   title: {
     marginTop: 30,
     marginBottom: 24,
     textAlign: 'center',
     fontSize: 24,
     fontWeight: '700',
-    color: '#0F172A',
   },
+
   emptyContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
   },
+
   emptyText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#0F172A',
     textAlign: 'center',
     marginBottom: 8,
   },
+
   helperText: {
     fontSize: 14,
-    color: '#64748B',
     textAlign: 'center',
     lineHeight: 20,
   },
+
   listContent: {
     paddingBottom: 20,
   },
+
   card: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
     position: 'relative',
   },
+
   cardImage: {
     width: 90,
     height: 90,
     borderRadius: 12,
     marginRight: 12,
-    backgroundColor: '#CBD5E1',
   },
+
   cardContent: {
     flex: 1,
     justifyContent: 'center',
     paddingRight: 34,
   },
+
   cardTitle: {
     fontSize: 16,
     fontWeight: '700',
     marginBottom: 6,
-    color: '#0F172A',
   },
+
   cardMeta: {
     fontSize: 14,
-    color: '#475569',
     marginBottom: 6,
   },
+
   cardDescription: {
     fontSize: 13,
-    color: '#64748B',
     lineHeight: 18,
     marginBottom: 4,
   },
+
   cardAddress: {
     fontSize: 12,
-    color: '#94A3B8',
   },
+
   removeButton: {
     position: 'absolute',
     top: 10,
@@ -203,10 +326,8 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
 });

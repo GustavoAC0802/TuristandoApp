@@ -1,134 +1,304 @@
-import React, { useRef, useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  Pressable,
+  Image,
   TouchableOpacity,
-  SafeAreaView,
+  useColorScheme,
 } from 'react-native';
 import Onboarding from 'react-native-onboarding-swiper';
-import { hideOnboardingForever } from '../storage/OnboardStorage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 
-type OnboardingScreenProps = {
-  userId: string;
-  onFinish: () => void;
+const ONBOARDING_KEY = '@turistando:onboarding_seen';
+
+type IconName = keyof typeof Ionicons.glyphMap;
+
+type SlideIconProps = {
+  icon: IconName;
+  title: string;
+  description: string;
+  dark: boolean;
 };
 
-export default function OnboardingScreen({
-  userId,
-  onFinish,
-}: OnboardingScreenProps) {
-  const [dontShowAgain, setDontShowAgain] = useState(false);
-  const [currentPage, setCurrentPage] = useState(0);
-
-  const onboardingRef = useRef<any>(null);
-
-  const totalPages = 3;
-  const isLastPage = currentPage === totalPages - 1;
-
-  const handleFinish = async () => {
-    try {
-      await hideOnboardingForever(userId);
-      onFinish();
-    } catch (error) {
-      console.error('Erro ao finalizar onboarding:', error);
-      onFinish();
-    }
-  };
-
-  const handleSkip = async () => {
-    try {
-      if (dontShowAgain) {
-        await hideOnboardingForever(userId);
-      }
-      onFinish();
-    } catch (error) {
-      console.error('Erro ao pular onboarding:', error);
-      onFinish();
-    }
-  };
-
-  const handleNext = () => {
-    if (isLastPage) {
-      handleFinish();
-      return;
-    }
-
-    onboardingRef.current?.goNext();
-  };
-
+function SlideIcon({ icon, title, description, dark }: SlideIconProps) {
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.topArea}>
-        <View style={styles.topActions}>
-          <TouchableOpacity onPress={handleSkip} style={styles.topButton}>
-            <Text style={styles.skipText}>Pular</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={handleNext} style={styles.topButton}>
-            <Text style={styles.nextText}>
-              {isLastPage ? 'Finalizar' : 'Próximo'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <Pressable
-          style={styles.rememberCard}
-          onPress={() => setDontShowAgain((prev) => !prev)}
-        >
-          <View
-            style={[
-              styles.checkbox,
-              dontShowAgain && styles.checkboxChecked,
-            ]}
-          >
-            {dontShowAgain && <Text style={styles.check}>✓</Text>}
-          </View>
-
-          <View style={styles.rememberTextArea}>
-            <Text style={styles.rememberTitle}>Não mostrar novamente</Text>
-            <Text style={styles.rememberSubtitle}>
-              Ocultar este onboarding nas próximas vezes
-            </Text>
-          </View>
-        </Pressable>
+    <View style={styles.slideIconContainer}>
+      <View style={[styles.iconCircle, dark && styles.iconCircleDark]}>
+        <Ionicons name={icon} size={58} color="#2563EB" />
       </View>
 
+      <Text style={[styles.slideTitle, dark && styles.textDark]}>
+        {title}
+      </Text>
+
+      <Text style={[styles.slideDescription, dark && styles.descriptionDark]}>
+        {description}
+      </Text>
+    </View>
+  );
+}
+
+function Dots({ selected }: { selected: boolean }) {
+  return (
+    <View
+      style={[
+        styles.dot,
+        selected ? styles.dotSelected : styles.dotDefault,
+      ]}
+    />
+  );
+}
+
+function ButtonText({ children }: { children: string }) {
+  return <Text style={styles.buttonText}>{children}</Text>;
+}
+
+export default function OnboardingScreen() {
+  const navigation = useNavigation<any>();
+  const colorScheme = useColorScheme();
+  const dark = colorScheme === 'dark';
+
+  async function finishOnboarding() {
+    try {
+      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+    } catch (error) {
+      console.log('Erro ao salvar onboarding:', error);
+    }
+
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'Welcome' }],
+    });
+  }
+
+  const backgroundColor = dark ? '#020617' : '#F8FAFC';
+
+  return (
+    <View style={[styles.container, { backgroundColor }]}>
       <Onboarding
-        ref={onboardingRef}
-        onSkip={handleSkip}
-        onDone={handleFinish}
-        pageIndexCallback={setCurrentPage}
-        showSkip={false}
-        showNext={false}
-        showDone={false}
-        bottomBarHeight={70}
+        onDone={finishOnboarding}
+        onSkip={finishOnboarding}
+        bottomBarHighlight={false}
+        bottomBarColor={backgroundColor}
+        DotComponent={Dots}
+        NextButtonComponent={() => <ButtonText>Próximo</ButtonText>}
+        SkipButtonComponent={() => <ButtonText>Pular</ButtonText>}
+        DoneButtonComponent={() => <ButtonText>Começar</ButtonText>}
         pages={[
           {
-            backgroundColor: '#ffffff',
-            title: 'Explore o mapa',
-            subtitle:
-              'Encontre pontos turísticos, restaurantes, museus e muito mais ao seu redor.',
-            image: <Text style={styles.emoji}>🗺️</Text>,
+            backgroundColor,
+            image: (
+              <SlideIcon
+                dark={dark}
+                icon="person-add-outline"
+                title="Personalize sua experiência"
+                description="Cadastre seus interesses turísticos para receber sugestões de locais que combinam com você."
+              />
+            ),
+            title: '',
+            subtitle: '',
           },
           {
-            backgroundColor: '#f5f7ff',
-            title: 'Favorite lugares',
-            subtitle:
-              'Salve seus locais preferidos para acessar depois com mais rapidez.',
-            image: <Text style={styles.emoji}>⭐</Text>,
+            backgroundColor,
+            image: (
+              <SlideIcon
+                dark={dark}
+                icon="finger-print-outline"
+                title="Login rápido e seguro"
+                description="Entre no Turistando com biometria, usando impressão digital ou reconhecimento facial no seu dispositivo."
+              />
+            ),
+            title: '',
+            subtitle: '',
           },
           {
-            backgroundColor: '#eefbf3',
-            title: 'Crie roteiros',
-            subtitle:
-              'Monte seus próprios roteiros e organize melhor sua viagem.',
-            image: <Text style={styles.emoji}>📍</Text>,
+            backgroundColor,
+            image: (
+              <SlideIcon
+                dark={dark}
+                icon="map-outline"
+                title="Explore pelo mapa"
+                description="Veja pontos turísticos próximos, abra detalhes dos locais e use o mapa para descobrir novos destinos."
+              />
+            ),
+            title: '',
+            subtitle: '',
+          },
+          {
+            backgroundColor,
+            image: (
+              <SlideIcon
+                dark={dark}
+                icon="search-outline"
+                title="Busque, filtre e descubra"
+                description="Encontre locais por categoria, avaliação, distância e use o modo perto de mim para ver opções próximas."
+              />
+            ),
+            title: '',
+            subtitle: '',
+          },
+          {
+            backgroundColor,
+            image: (
+              <SlideIcon
+                dark={dark}
+                icon="information-circle-outline"
+                title="Detalhes completos do local"
+                description="Consulte fotos, horários, contato, site oficial, avaliações, acessibilidade, segurança e clima do destino."
+              />
+            ),
+            title: '',
+            subtitle: '',
+          },
+          {
+            backgroundColor,
+            image: (
+              <SlideIcon
+                dark={dark}
+                icon="star-outline"
+                title="Avalie e favorite locais"
+                description="Comente, dê notas, salve seus favoritos e ajude outros turistas com suas experiências."
+              />
+            ),
+            title: '',
+            subtitle: '',
+          },
+          {
+            backgroundColor,
+            image: (
+              <SlideIcon
+                dark={dark}
+                icon="navigate-outline"
+                title="Rotas e compartilhamento"
+                description="Abra rotas no mapa, compartilhe locais por link e envie seus destinos favoritos para amigos."
+              />
+            ),
+            title: '',
+            subtitle: '',
+          },
+          {
+            backgroundColor,
+            image: (
+              <SlideIcon
+                dark={dark}
+                icon="calendar-outline"
+                title="Eventos próximos"
+                description="Veja eventos por data e localização, com notificações para não perder atrações perto de você."
+              />
+            ),
+            title: '',
+            subtitle: '',
+          },
+          {
+            backgroundColor,
+            image: (
+              <SlideIcon
+                dark={dark}
+                icon="volume-high-outline"
+                title="Guia de voz no passeio"
+                description="Durante a visita, o app pode narrar informações sobre pontos próximos usando localização e voz."
+              />
+            ),
+            title: '',
+            subtitle: '',
+          },
+          {
+            backgroundColor,
+            image: (
+              <SlideIcon
+                dark={dark}
+                icon="heart-circle-outline"
+                title="Recomendações inteligentes"
+                description="Receba sugestões baseadas nos seus check-ins, avaliações, histórico de buscas e categorias mais visitadas."
+              />
+            ),
+            title: '',
+            subtitle: '',
+          },
+          {
+            backgroundColor,
+            image: (
+              <SlideIcon
+                dark={dark}
+                icon="checkmark-done-circle-outline"
+                title="Check-in e conquistas"
+                description="Marque locais visitados, acompanhe seu progresso e desbloqueie conquistas dentro do app."
+              />
+            ),
+            title: '',
+            subtitle: '',
+          },
+          {
+            backgroundColor,
+            image: (
+              <SlideIcon
+                dark={dark}
+                icon="map-sharp"
+                title="Crie seus roteiros"
+                description="Monte itinerários personalizados por dias, reorganize locais e compartilhe seu roteiro em PDF."
+              />
+            ),
+            title: '',
+            subtitle: '',
+          },
+          {
+            backgroundColor,
+            image: (
+              <SlideIcon
+                dark={dark}
+                icon="cloud-outline"
+                title="Clima local"
+                description="Veja a temperatura atual e a previsão dos próximos dias para planejar melhor seus passeios."
+              />
+            ),
+            title: '',
+            subtitle: '',
+          },
+          {
+            backgroundColor,
+            image: (
+              <SlideIcon
+                dark={dark}
+                icon="language-outline"
+                title="Idiomas e tradutor"
+                description="Use o app em português, inglês ou espanhol e traduza frases úteis para viagens."
+              />
+            ),
+            title: '',
+            subtitle: '',
+          },
+          {
+            backgroundColor,
+            image: (
+              <SlideIcon
+                dark={dark}
+                icon="moon-outline"
+                title="Tema claro, escuro e automático"
+                description="O app acompanha sua preferência de tema e melhora a visualização durante o uso noturno."
+              />
+            ),
+            title: '',
+            subtitle: '',
+          },
+          {
+            backgroundColor,
+            image: (
+              <SlideIcon
+                dark={dark}
+                icon="download-outline"
+                title="Acesso offline"
+                description="Consulte informações salvas e roteiros mesmo sem internet, facilitando o uso durante a viagem."
+              />
+            ),
+            title: '',
+            subtitle: '',
           },
         ]}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -136,86 +306,74 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  topArea: {
-    position: 'absolute',
-    top: 20,
-    left: 16,
-    right: 16,
-    zIndex: 10,
-  },
-  topActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  topButton: {
-    marginTop:20,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-  },
-  skipText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  nextText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#3B82F6',
-  },
-  rememberCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderWidth: 2,
-    borderColor: '#CBD5E1',
-    borderRadius: 8,
-    marginRight: 12,
+
+  slideIconContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 28,
+    marginTop: 30,
   },
-  checkboxChecked: {
-    backgroundColor: '#3B82F6',
-    borderColor: '#3B82F6',
+
+  iconCircle: {
+    width: 132,
+    height: 132,
+    borderRadius: 66,
+    backgroundColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 28,
   },
-  check: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 14,
+
+  iconCircleDark: {
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#1D4ED8',
   },
-  rememberTextArea: {
-    flex: 1,
-  },
-  rememberTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+
+  slideTitle: {
+    fontSize: 25,
+    fontWeight: '800',
     color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 12,
   },
-  rememberSubtitle: {
-    marginTop: 2,
-    fontSize: 13,
-    color: '#64748B',
+
+  textDark: {
+    color: '#F8FAFC',
   },
-  emoji: {
-    fontSize: 72,
+
+  slideDescription: {
+    fontSize: 16,
+    lineHeight: 24,
+    color: '#475569',
+    textAlign: 'center',
+    maxWidth: 330,
+  },
+
+  descriptionDark: {
+    color: '#CBD5E1',
+  },
+
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginHorizontal: 4,
+  },
+
+  dotSelected: {
+    width: 22,
+    backgroundColor: '#2563EB',
+  },
+
+  dotDefault: {
+    backgroundColor: '#CBD5E1',
+  },
+
+  buttonText: {
+    color: '#2563EB',
+    fontSize: 16,
+    fontWeight: '700',
+    paddingHorizontal: 14,
   },
 });

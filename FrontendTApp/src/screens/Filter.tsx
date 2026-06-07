@@ -20,6 +20,21 @@ export default function FiltersScreen() {
   const { t } = useTranslation();
 
   const currentFilters = useSelector((state: RootState) => state.search.filters);
+  const theme = useSelector((state: RootState) => state.theme.mode);
+
+  const isDark = theme === 'dark';
+
+  const colors = {
+    background: isDark ? '#0F172A' : '#F8FAFC',
+    card: isDark ? '#1E293B' : '#FFFFFF',
+    border: isDark ? '#334155' : '#CBD5E1',
+    title: isDark ? '#F8FAFC' : '#0F172A',
+    text: isDark ? '#E2E8F0' : '#0F172A',
+    muted: isDark ? '#94A3B8' : '#64748B',
+    chipBackground: isDark ? '#1E293B' : '#FFFFFF',
+    chipSelected: '#3B82F6',
+    primary: '#3B82F6',
+  };
 
   const [selectedCategories, setSelectedCategories] = useState<string[]>(
     currentFilters?.categories || []
@@ -83,21 +98,52 @@ export default function FiltersScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      {/* HEADER */}
+    <View
+      style={[
+        styles.container,
+        {
+          backgroundColor: colors.background,
+        },
+      ]}
+    >
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#0F172A" />
+        <TouchableOpacity
+          style={[
+            styles.backButton,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+            },
+          ]}
+          activeOpacity={0.8}
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name="arrow-back" size={24} color={colors.title} />
         </TouchableOpacity>
 
-        <Text style={styles.title}>{t('filters.title')}</Text>
+        <Text
+          style={[
+            styles.title,
+            {
+              color: colors.title,
+            },
+          ]}
+        >
+          {t('filters.title')}
+        </Text>
 
-        <View style={{ width: 24 }} />
+        <View style={{ width: 42 }} />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* CATEGORIAS */}
-        <Text style={styles.sectionTitle}>
+        <Text
+          style={[
+            styles.sectionTitle,
+            {
+              color: colors.title,
+            },
+          ]}
+        >
           {t('filters.categories')}
         </Text>
 
@@ -110,14 +156,22 @@ export default function FiltersScreen() {
                 key={item.value}
                 style={[
                   styles.chip,
-                  selected && styles.chipSelected,
+                  {
+                    backgroundColor: selected
+                      ? colors.chipSelected
+                      : colors.chipBackground,
+                    borderColor: selected ? colors.chipSelected : colors.border,
+                  },
                 ]}
+                activeOpacity={0.8}
                 onPress={() => toggleCategory(item.value)}
               >
                 <Text
                   style={[
                     styles.chipText,
-                    selected && styles.chipTextSelected,
+                    {
+                      color: selected ? '#FFFFFF' : colors.text,
+                    },
                   ]}
                 >
                   {item.label}
@@ -127,67 +181,130 @@ export default function FiltersScreen() {
           })}
         </View>
 
-        {/* DISTÂNCIA */}
-        <Text style={styles.sectionTitle}>
+        <Text
+          style={[
+            styles.sectionTitle,
+            {
+              color: colors.title,
+            },
+          ]}
+        >
           {t('filters.distance')}
         </Text>
 
         <View style={styles.chipsContainer}>
-          {[1, 5, 10, 20].map((d) => (
-            <TouchableOpacity
-              key={d}
-              style={[
-                styles.chip,
-                distance === d && styles.chipSelected,
-              ]}
-              onPress={() => setDistance(distance === d ? null : d)}
-            >
-              <Text
+          {[1, 5, 10, 20].map((d) => {
+            const selected = distance === d;
+
+            return (
+              <TouchableOpacity
+                key={d}
                 style={[
-                  styles.chipText,
-                  distance === d && styles.chipTextSelected,
+                  styles.chip,
+                  {
+                    backgroundColor: selected
+                      ? colors.chipSelected
+                      : colors.chipBackground,
+                    borderColor: selected ? colors.chipSelected : colors.border,
+                  },
                 ]}
+                activeOpacity={0.8}
+                onPress={() => setDistance(selected ? null : d)}
               >
-                {d} {t('filters.km')}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <Text
+                  style={[
+                    styles.chipText,
+                    {
+                      color: selected ? '#FFFFFF' : colors.text,
+                    },
+                  ]}
+                >
+                  {d} {t('filters.km')}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
-        {/* AVALIAÇÃO */}
-        <Text style={styles.sectionTitle}>
+        <Text
+          style={[
+            styles.sectionTitle,
+            {
+              color: colors.title,
+            },
+          ]}
+        >
           {t('filters.rating')}
         </Text>
 
         <View style={styles.chipsContainer}>
-          {[3, 4, 5].map((r) => (
-            <TouchableOpacity
-              key={r}
-              style={[
-                styles.chip,
-                rating === r && styles.chipSelected,
-              ]}
-              onPress={() => setRating(rating === r ? null : r)}
-            >
-              <Text
+          {[3, 4, 5].map((r) => {
+            const selected = rating === r;
+
+            return (
+              <TouchableOpacity
+                key={r}
                 style={[
-                  styles.chipText,
-                  rating === r && styles.chipTextSelected,
+                  styles.chip,
+                  {
+                    backgroundColor: selected
+                      ? colors.chipSelected
+                      : colors.chipBackground,
+                    borderColor: selected ? colors.chipSelected : colors.border,
+                  },
                 ]}
+                activeOpacity={0.8}
+                onPress={() => setRating(selected ? null : r)}
               >
-                ⭐ {r}+
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <Text
+                  style={[
+                    styles.chipText,
+                    {
+                      color: selected ? '#FFFFFF' : colors.text,
+                    },
+                  ]}
+                >
+                  ⭐ {r}+
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
-        {/* BOTÕES */}
         <View style={styles.actions}>
-          <TouchableOpacity onPress={handleClear}>
-            <Text style={styles.clearText}>{t('filters.clear')}</Text>
+          <TouchableOpacity
+            style={[
+              styles.clearButton,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+              },
+            ]}
+            activeOpacity={0.8}
+            onPress={handleClear}
+          >
+            <Text
+              style={[
+                styles.clearText,
+                {
+                  color: colors.muted,
+                },
+              ]}
+            >
+              {t('filters.clear')}
+            </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.applyButton} onPress={handleApply}>
+          <TouchableOpacity
+            style={[
+              styles.applyButton,
+              {
+                backgroundColor: colors.primary,
+              },
+            ]}
+            activeOpacity={0.85}
+            onPress={handleApply}
+          >
             <Text style={styles.applyText}>{t('filters.search')}</Text>
           </TouchableOpacity>
         </View>
@@ -199,7 +316,6 @@ export default function FiltersScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
     padding: 16,
   },
 
@@ -211,6 +327,15 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
 
+  backButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+
   title: {
     fontSize: 20,
     fontWeight: '700',
@@ -218,9 +343,9 @@ const styles = StyleSheet.create({
 
   sectionTitle: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     marginBottom: 10,
-    marginTop: 10,
+    marginTop: 16,
   },
 
   chipsContainer: {
@@ -234,43 +359,47 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
-  },
-
-  chipSelected: {
-    backgroundColor: '#3B82F6',
-    borderColor: '#3B82F6',
   },
 
   chipText: {
-    color: '#0F172A',
-  },
-
-  chipTextSelected: {
-    color: '#FFFFFF',
+    fontWeight: '600',
   },
 
   actions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 30,
+    gap: 12,
+    marginTop: 34,
     marginBottom: 20,
   },
 
+  clearButton: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   clearText: {
-    color: '#64748B',
     fontSize: 16,
+    fontWeight: '700',
   },
 
   applyButton: {
-    backgroundColor: '#3B82F6',
+    flex: 1,
+    minHeight: 48,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   applyText: {
     color: '#FFFFFF',
-    fontWeight: '600',
+    fontWeight: '700',
+    fontSize: 16,
   },
 });

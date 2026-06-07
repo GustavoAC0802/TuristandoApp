@@ -11,15 +11,16 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  useColorScheme,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import { useSelector } from 'react-redux';
 
 import api from '../services/api';
+import type { RootState } from '../store';
 
 type Place = {
   _id: string;
@@ -332,8 +333,8 @@ function toBackendDays(days: ItineraryDay[]) {
 }
 
 export default function ItineraryScreen() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const theme = useSelector((state: RootState) => state.theme.mode);
+  const isDark = theme === 'dark';
 
   const [itineraries, setItineraries] = useState<Itinerary[]>([]);
   const [itinerary, setItinerary] = useState<Itinerary | null>(null);
@@ -1134,7 +1135,13 @@ export default function ItineraryScreen() {
           style={styles.scroll}
           contentContainerStyle={styles.content}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+              progressBackgroundColor={colors.card}
+            />
           }
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}

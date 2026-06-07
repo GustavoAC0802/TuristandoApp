@@ -74,6 +74,29 @@ export default function SearchResultsScreen() {
 
   const favoriteItems = useSelector((state: RootState) => state.favorites.items);
   const searchState = useSelector((state: any) => state.search);
+  const theme = useSelector((state: RootState) => state.theme.mode);
+
+  const isDark = theme === 'dark';
+
+  const colors = {
+    background: isDark ? '#0F172A' : '#F8FAFC',
+    card: isDark ? '#1E293B' : '#FFFFFF',
+    cardBorder: isDark ? '#334155' : '#E2E8F0',
+    title: isDark ? '#F8FAFC' : '#0F172A',
+    text: isDark ? '#E2E8F0' : '#0F172A',
+    meta: isDark ? '#CBD5E1' : '#475569',
+    description: isDark ? '#CBD5E1' : '#64748B',
+    muted: isDark ? '#94A3B8' : '#94A3B8',
+    iconMuted: isDark ? '#94A3B8' : '#94A3B8',
+    imageBackground: isDark ? '#334155' : '#CBD5E1',
+    buttonBackground: isDark ? '#0F172A' : '#FFFFFF',
+    buttonBorder: isDark ? '#475569' : '#E2E8F0',
+    primary: isDark ? '#60A5FA' : '#2563EB',
+    primaryStrong: isDark ? '#93C5FD' : '#1E3A8A',
+    offlineBackground: isDark ? '#422006' : '#FEF3C7',
+    offlineBorder: isDark ? '#92400E' : '#F59E0B',
+    offlineText: isDark ? '#FDE68A' : '#92400E',
+  };
 
   const searchText = searchState?.searchText ?? '';
   const filters = searchState?.filters ?? {
@@ -145,9 +168,9 @@ export default function SearchResultsScreen() {
     const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
       Math.cos(toRad(userLat)) *
-      Math.cos(toRad(placeLat)) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2);
+        Math.cos(toRad(placeLat)) *
+        Math.sin(dLng / 2) *
+        Math.sin(dLng / 2);
 
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
@@ -176,7 +199,10 @@ export default function SearchResultsScreen() {
     };
   }
 
-  function applyOfflineFilters(items: Place[], coords?: { latitude: number; longitude: number } | null) {
+  function applyOfflineFilters(
+    items: Place[],
+    coords?: { latitude: number; longitude: number } | null
+  ) {
     let filtered = [...items];
 
     const normalizedSearch = searchText.trim().toLowerCase();
@@ -323,13 +349,13 @@ export default function SearchResultsScreen() {
       const orderedItems =
         isNearMeMode || maxDistance !== null
           ? [...items].sort((a, b) => {
-            const distanceA =
-              typeof a.distance === 'number' ? a.distance : Number.MAX_VALUE;
-            const distanceB =
-              typeof b.distance === 'number' ? b.distance : Number.MAX_VALUE;
+              const distanceA =
+                typeof a.distance === 'number' ? a.distance : Number.MAX_VALUE;
+              const distanceB =
+                typeof b.distance === 'number' ? b.distance : Number.MAX_VALUE;
 
-            return distanceA - distanceB;
-          })
+              return distanceA - distanceB;
+            })
           : items;
 
       setPlaces(orderedItems);
@@ -472,33 +498,56 @@ export default function SearchResultsScreen() {
 
     return (
       <TouchableOpacity
-        style={styles.card}
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.cardBorder,
+          },
+        ]}
         activeOpacity={0.8}
         onPress={() => handleSelectPlace(item)}
       >
         <TouchableOpacity
-          style={styles.favoriteButton}
+          style={[
+            styles.favoriteButton,
+            {
+              backgroundColor: colors.buttonBackground,
+              borderColor: colors.buttonBorder,
+            },
+          ]}
           activeOpacity={0.8}
           onPress={() => handleToggleFavorite(item)}
         >
           <Ionicons
             name={favorite ? 'star' : 'star-outline'}
             size={22}
-            color={favorite ? '#FACC15' : '#94A3B8'}
+            color={favorite ? '#FACC15' : colors.iconMuted}
           />
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.detailsButton}
+          style={[
+            styles.detailsButton,
+            {
+              backgroundColor: colors.buttonBackground,
+              borderColor: colors.buttonBorder,
+            },
+          ]}
           activeOpacity={0.8}
           onPress={() => handleOpenDetails(item)}
         >
-          <Ionicons name="add" size={24} color="#3B82F6" />
+          <Ionicons name="add" size={24} color={colors.primary} />
         </TouchableOpacity>
 
         <Image
           source={{ uri: getImageUri(item) }}
-          style={styles.cardImage}
+          style={[
+            styles.cardImage,
+            {
+              backgroundColor: colors.imageBackground,
+            },
+          ]}
           resizeMode="cover"
           onError={() => {
             setImageErrors((prev) => ({
@@ -509,44 +558,114 @@ export default function SearchResultsScreen() {
         />
 
         <View style={styles.cardContent}>
-          <Text style={styles.cardTitle} numberOfLines={1}>
+          <Text
+            style={[
+              styles.cardTitle,
+              {
+                color: colors.text,
+              },
+            ]}
+            numberOfLines={1}
+          >
             {item.name}
           </Text>
 
-          <Text style={styles.cardMeta}>{getRatingText(item)}</Text>
+          <Text
+            style={[
+              styles.cardMeta,
+              {
+                color: colors.meta,
+              },
+            ]}
+          >
+            {getRatingText(item)}
+          </Text>
 
           {distanceText ? (
-            <Text style={styles.cardDistance}>
+            <Text
+              style={[
+                styles.cardDistance,
+                {
+                  color: colors.primary,
+                },
+              ]}
+            >
               📍 {distanceText}
             </Text>
           ) : null}
 
           {recent ? (
-            <Text style={styles.recentBadge}>{t('results.viewedRecently')}</Text>
+            <Text
+              style={[
+                styles.recentBadge,
+                {
+                  color: colors.primary,
+                },
+              ]}
+            >
+              {t('results.viewedRecently')}
+            </Text>
           ) : null}
 
-          <Text style={styles.cardDescription} numberOfLines={2}>
+          <Text
+            style={[
+              styles.cardDescription,
+              {
+                color: colors.description,
+              },
+            ]}
+            numberOfLines={2}
+          >
             {item.description}
           </Text>
 
-          <Text style={styles.cardAddress} numberOfLines={1}>
+          <Text
+            style={[
+              styles.cardAddress,
+              {
+                color: colors.muted,
+              },
+            ]}
+            numberOfLines={1}
+          >
             📍 {item.address}
           </Text>
 
           {item.openingHours ? (
-            <Text style={styles.cardAddress} numberOfLines={1}>
+            <Text
+              style={[
+                styles.cardAddress,
+                {
+                  color: colors.muted,
+                },
+              ]}
+              numberOfLines={1}
+            >
               🕒 {item.openingHours}
             </Text>
           ) : null}
 
           {item.contact ? (
-            <Text style={styles.cardAddress} numberOfLines={1}>
+            <Text
+              style={[
+                styles.cardAddress,
+                {
+                  color: colors.muted,
+                },
+              ]}
+              numberOfLines={1}
+            >
               📞 {item.contact}
             </Text>
           ) : null}
 
           <TouchableOpacity
-            style={styles.routeButton}
+            style={[
+              styles.routeButton,
+              {
+                backgroundColor: colors.primary,
+              },
+            ]}
             activeOpacity={0.8}
             onPress={() => handleOpenRoutes(item)}
           >
@@ -565,29 +684,75 @@ export default function SearchResultsScreen() {
       : null;
 
   return (
-    <View style={styles.container}>
+    <View
+      style={[
+        styles.container,
+        {
+          backgroundColor: colors.background,
+        },
+      ]}
+    >
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
-          style={styles.backButton}
+          style={[
+            styles.backButton,
+            {
+              backgroundColor: colors.buttonBackground,
+              borderColor: colors.buttonBorder,
+            },
+          ]}
           activeOpacity={0.8}
         >
-          <Ionicons name="arrow-back" size={24} color="#0F172A" />
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
 
-        <Text style={styles.title}>
+        <Text
+          style={[
+            styles.title,
+            {
+              color: colors.title,
+            },
+          ]}
+        >
           {isNearMeMode ? t('results.nearMeTitle') : t('results.title')}
         </Text>
 
         <View style={styles.headerSpacer} />
       </View>
 
-      {subtitleText ? <Text style={styles.subtitle}>{subtitleText}</Text> : null}
+      {subtitleText ? (
+        <Text
+          style={[
+            styles.subtitle,
+            {
+              color: colors.description,
+            },
+          ]}
+        >
+          {subtitleText}
+        </Text>
+      ) : null}
 
       {isOfflineMode ? (
-        <View style={styles.offlineBanner}>
-          <Ionicons name="cloud-offline-outline" size={18} color="#92400E" />
-          <Text style={styles.offlineBannerText}>
+        <View
+          style={[
+            styles.offlineBanner,
+            {
+              backgroundColor: colors.offlineBackground,
+              borderColor: colors.offlineBorder,
+            },
+          ]}
+        >
+          <Ionicons name="cloud-offline-outline" size={18} color={colors.offlineText} />
+          <Text
+            style={[
+              styles.offlineBannerText,
+              {
+                color: colors.offlineText,
+              },
+            ]}
+          >
             Modo offline: exibindo locais salvos no dispositivo.
           </Text>
         </View>
@@ -595,7 +760,7 @@ export default function SearchResultsScreen() {
 
       {loading ? (
         <View style={styles.loadingWrapper}>
-          <ActivityIndicator size="large" color="#3B82F6" />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : (
         <FlatList
@@ -604,7 +769,14 @@ export default function SearchResultsScreen() {
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={
-            <Text style={styles.emptyText}>
+            <Text
+              style={[
+                styles.emptyText,
+                {
+                  color: colors.description,
+                },
+              ]}
+            >
               {isOfflineMode
                 ? 'Nenhum local salvo offline para esta busca.'
                 : isNearMeMode
@@ -622,7 +794,6 @@ export default function SearchResultsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
     paddingHorizontal: 16,
     paddingTop: 16,
   },
@@ -641,9 +812,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
 
   title: {
@@ -652,7 +821,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 24,
     fontWeight: '700',
-    color: '#0F172A',
   },
 
   headerSpacer: {
@@ -661,7 +829,6 @@ const styles = StyleSheet.create({
 
   subtitle: {
     fontSize: 14,
-    color: '#64748B',
     marginBottom: 14,
   },
 
@@ -669,8 +836,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#FEF3C7',
-    borderColor: '#F59E0B',
     borderWidth: 1,
     borderRadius: 12,
     padding: 10,
@@ -680,7 +845,6 @@ const styles = StyleSheet.create({
   offlineBannerText: {
     flex: 1,
     fontSize: 13,
-    color: '#92400E',
     fontWeight: '700',
   },
 
@@ -696,12 +860,10 @@ const styles = StyleSheet.create({
 
   card: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
     position: 'relative',
   },
 
@@ -713,11 +875,9 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
 
   detailsButton: {
@@ -728,11 +888,9 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
 
   cardImage: {
@@ -740,7 +898,6 @@ const styles = StyleSheet.create({
     height: 90,
     borderRadius: 12,
     marginRight: 12,
-    backgroundColor: '#CBD5E1',
   },
 
   cardContent: {
@@ -753,45 +910,38 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     marginBottom: 6,
-    color: '#0F172A',
   },
 
   cardMeta: {
     fontSize: 14,
-    color: '#475569',
     marginBottom: 4,
   },
 
   recentBadge: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#2563EB',
     marginBottom: 6,
   },
 
   cardDistance: {
     fontSize: 13,
-    color: '#2563EB',
     fontWeight: '800',
     marginBottom: 6,
   },
 
   cardDescription: {
     fontSize: 13,
-    color: '#64748B',
     lineHeight: 18,
     marginBottom: 4,
   },
 
   cardAddress: {
     fontSize: 12,
-    color: '#94A3B8',
   },
 
   routeButton: {
     height: 38,
     borderRadius: 12,
-    backgroundColor: '#2563EB',
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
@@ -810,6 +960,5 @@ const styles = StyleSheet.create({
   emptyText: {
     textAlign: 'center',
     marginTop: 32,
-    color: '#64748B',
   },
 });
