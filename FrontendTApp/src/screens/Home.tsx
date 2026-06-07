@@ -96,7 +96,7 @@ export default function HomeScreen() {
   const dispatch = useDispatch();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { t } = useTranslation();
+  const { t, i18n: translationI18n } = useTranslation();
 
   const searchText = useSelector((state: RootState) => state.search.searchText);
   const theme = useSelector((state: RootState) => state.theme.mode);
@@ -150,7 +150,7 @@ export default function HomeScreen() {
       const response = await api.get("/weather", {
         params: {
           city,
-          lang: i18n.language,
+          lang: translationI18n.resolvedLanguage || translationI18n.language,
         },
       });
 
@@ -200,15 +200,15 @@ export default function HomeScreen() {
       : "";
 
     return `
-      Você está próximo de ${place.name}.
+      ${t('home.voiceGuide.nearPlace', { name: place.name })}.
       ${
         place.description ||
-        "Este é um ponto turístico cadastrado no Turistando."
+        t('home.voiceGuide.defaultDescription')
       }
-      ${place.address ? `Endereço: ${place.address}.` : ""}
-      ${place.city ? `Cidade: ${place.city}.` : ""}
-      ${place.openingHours ? `Horário de funcionamento: ${place.openingHours}.` : ""}
-      ${categories ? `Categorias: ${categories}.` : ""}
+      ${place.address ? `${t('itinerary.address')}: ${place.address}.` : ""}
+      ${place.city ? `${t('home.city', 'Cidade')}: ${place.city}.` : ""}
+      ${place.openingHours ? `${t('details.openingHours')}: ${place.openingHours}.` : ""}
+      ${categories ? `${t('filters.categories')}: ${categories}.` : ""}
     `;
   }
 
@@ -512,7 +512,7 @@ export default function HomeScreen() {
 
       navigation.navigate("Results");
     } catch {
-      Alert.alert(t("common.error"), "Erro ao buscar locais");
+      Alert.alert(t("common.error"), t("results.searchError"));
     }
   }
 
@@ -801,7 +801,7 @@ export default function HomeScreen() {
                   { color: isDark ? "#FFFFFF" : "#0F172A" },
                 ]}
               >
-                Tradutor turístico
+                {t("home.touristTranslator")}
               </Text>
 
               <Text
@@ -810,7 +810,7 @@ export default function HomeScreen() {
                   { color: isDark ? "#CBD5E1" : "#64748B" },
                 ]}
               >
-                Frases úteis em inglês e espanhol
+                {t("home.touristTranslatorDescription")}
               </Text>
             </View>
 
@@ -869,7 +869,7 @@ export default function HomeScreen() {
                   { color: isDark ? "#FFFFFF" : "#0F172A" },
                 ]}
               >
-                {walkingGuideActive ? "Guia automático" : "Guia pausado"}
+                {walkingGuideActive ? t("home.walkingGuide.active") : t("home.walkingGuide.paused")}
               </Text>
 
               <Text
@@ -878,7 +878,7 @@ export default function HomeScreen() {
                   { color: isDark ? "#CBD5E1" : "#64748B" },
                 ]}
               >
-                {walkingGuideActive ? "Toque para parar" : "Toque para reativar"}
+                {walkingGuideActive ? t("home.walkingGuide.tapToStop") : t("home.walkingGuide.tapToRestart")}
               </Text>
             </View>
           </TouchableOpacity>

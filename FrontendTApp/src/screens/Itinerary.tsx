@@ -18,6 +18,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { useSelector } from 'react-redux';
+import { useTranslation } from 'react-i18next';
 
 import api from '../services/api';
 import type { RootState } from '../store';
@@ -83,9 +84,9 @@ function getMapsUrl(place?: Place) {
   return `https://www.google.com/maps/search/?api=1&query=${query}`;
 }
 
-function buildItineraryPdfHtml(itinerary: Itinerary) {
+function buildItineraryPdfHtml(itinerary: Itinerary, t: any, locale = 'pt-BR') {
   const normalizedDays = normalizeDays(itinerary.days);
-  const generatedAt = new Date().toLocaleDateString('pt-BR');
+  const generatedAt = new Date().toLocaleDateString(locale);
 
   const daysHtml = normalizedDays
     .map((day) => {
@@ -99,18 +100,18 @@ function buildItineraryPdfHtml(itinerary: Itinerary) {
               <div class="place-header">
                 <div class="place-number">${index + 1}</div>
                 <div class="place-title-area">
-                  <h3>${escapeHtml(place?.name || 'Local sem nome')}</h3>
+                  <h3>${escapeHtml(place?.name || t('itinerary.unnamedPlace'))}</h3>
                   ${
                     item.time
-                      ? `<p class="time">Horário: ${escapeHtml(item.time)}</p>`
-                      : '<p class="time muted">Horário não informado</p>'
+                      ? `<p class="time">${escapeHtml(t('itinerary.time'))}: ${escapeHtml(item.time)}</p>`
+                      : `<p class="time muted">${escapeHtml(t('itinerary.timeUnavailable'))}</p>`
                   }
                 </div>
               </div>
 
               ${
                 place?.address
-                  ? `<p class="address"><strong>Endereço:</strong> ${escapeHtml(
+                  ? `<p class="address"><strong>${escapeHtml(t('itinerary.address'))}:</strong> ${escapeHtml(
                       place.address
                     )}</p>`
                   : ''
@@ -118,7 +119,7 @@ function buildItineraryPdfHtml(itinerary: Itinerary) {
 
               ${
                 item.notes
-                  ? `<p class="notes"><strong>Observações:</strong> ${escapeHtml(
+                  ? `<p class="notes"><strong>${escapeHtml(t('itinerary.notes'))}:</strong> ${escapeHtml(
                       item.notes
                     )}</p>`
                   : ''
@@ -126,7 +127,7 @@ function buildItineraryPdfHtml(itinerary: Itinerary) {
 
               ${
                 mapsUrl
-                  ? `<a class="map-button" href="${mapsUrl}">Abrir no Google Maps</a>`
+                  ? `<a class="map-button" href="${mapsUrl}">${escapeHtml(t('itinerary.openInGoogleMaps'))}</a>`
                   : ''
               }
             </div>
@@ -136,11 +137,11 @@ function buildItineraryPdfHtml(itinerary: Itinerary) {
 
       return `
         <section class="day-section">
-          <h2>Dia ${day.day}</h2>
+          <h2>${escapeHtml(t('itinerary.day', { day: day.day }))}</h2>
           ${
             day.places.length > 0
               ? placesHtml
-              : '<p class="empty">Nenhum local adicionado neste dia.</p>'
+              : `<p class="empty">${escapeHtml(t('itinerary.emptyDay'))}</p>`
           }
         </section>
       `;
@@ -149,7 +150,7 @@ function buildItineraryPdfHtml(itinerary: Itinerary) {
 
   return `
     <!DOCTYPE html>
-    <html lang="pt-BR">
+    <html lang="${escapeHtml(locale)}">
       <head>
         <meta charset="UTF-8" />
         <style>
@@ -289,18 +290,18 @@ function buildItineraryPdfHtml(itinerary: Itinerary) {
       <body>
         <header class="header">
           <div class="app-name">Turistando</div>
-          <h1>${escapeHtml(itinerary.title || DEFAULT_TITLE)}</h1>
-          <div class="subtitle">Gerado em ${escapeHtml(generatedAt)}</div>
+          <h1>${escapeHtml(itinerary.title || t('itinerary.defaultTitle'))}</h1>
+          <div class="subtitle">${escapeHtml(t('itinerary.generatedAt', { date: generatedAt }))}</div>
         </header>
 
         ${
           normalizedDays.length > 0
             ? daysHtml
-            : '<p class="empty">Este roteiro ainda não possui locais adicionados.</p>'
+            : `<p class="empty">${escapeHtml(t('itinerary.empty'))}</p>`
         }
 
         <footer class="footer">
-          Roteiro gerado pelo aplicativo Turistando.
+          ${escapeHtml(t('itinerary.pdfFooter', 'Roteiro gerado pelo aplicativo Turistando.'))}
         </footer>
       </body>
     </html>
@@ -333,6 +334,9 @@ function toBackendDays(days: ItineraryDay[]) {
 }
 
 export default function ItineraryScreen() {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage || i18n.language || 'pt-BR';
+  const defaultTitle = t('itinerary.defaultTitle');
   const theme = useSelector((state: RootState) => state.theme.mode);
   const isDark = theme === 'dark';
 
@@ -340,7 +344,7 @@ export default function ItineraryScreen() {
   const [itinerary, setItinerary] = useState<Itinerary | null>(null);
 
   const [selectedDay, setSelectedDay] = useState(1);
-  const [title, setTitle] = useState(DEFAULT_TITLE);
+  const [title, setTitle] = useState(defaultTitle);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -415,7 +419,7 @@ export default function ItineraryScreen() {
 
       if (selected) {
         const normalized = normalizeDays(selected.days);
-        setTitle(selected.title || DEFAULT_TITLE);
+        setTitle(selected.title || defaultTitle);
 
         const hasSelectedDay = normalized.some(
           (day) => day.day === selectedDay
@@ -427,7 +431,7 @@ export default function ItineraryScreen() {
       }
     } catch (error) {
       console.error('Erro ao carregar roteiros:', error);
-      Alert.alert('Erro', 'Não foi possível carregar seus roteiros.');
+      Alert.alert(t('common.error'), t('itinerary.loadError'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -478,7 +482,7 @@ export default function ItineraryScreen() {
     if (!itinerary) return null;
 
     const response = await api.put(`/itineraries/${itinerary._id}`, {
-      title: nextTitle.trim() || DEFAULT_TITLE,
+      title: nextTitle.trim() || defaultTitle,
       days: toBackendDays(nextDays),
     });
 
@@ -487,7 +491,7 @@ export default function ItineraryScreen() {
     updateSelectedItinerary(updated);
 
     if (showSuccess) {
-      Alert.alert('Pronto', 'Roteiro atualizado.');
+      Alert.alert(t('common.success', 'Pronto'), t('itinerary.updated', 'Roteiro atualizado.'));
     }
 
     return updated;
@@ -502,11 +506,11 @@ export default function ItineraryScreen() {
       const updated = await saveItinerary(title, days, true);
 
       if (updated) {
-        setTitle(updated.title || DEFAULT_TITLE);
+        setTitle(updated.title || defaultTitle);
       }
     } catch (error) {
       console.error('Erro ao atualizar nome do roteiro:', error);
-      Alert.alert('Erro', 'Não foi possível atualizar o nome do roteiro.');
+      Alert.alert(t('common.error'), t('itinerary.updateTitleError', 'Não foi possível atualizar o nome do roteiro.'));
     } finally {
       setSaving(false);
     }
@@ -519,7 +523,7 @@ export default function ItineraryScreen() {
       const count = itineraries.length + 1;
 
       const response = await api.post('/itineraries', {
-        title: `Roteiro ${count}`,
+        title: `${t('itinerary.defaultTitle')} ${count}`,
         days: [
           {
             day: 1,
@@ -536,11 +540,11 @@ export default function ItineraryScreen() {
 
       setItineraries((prev) => [normalizedCreated, ...prev]);
       setItinerary(normalizedCreated);
-      setTitle(normalizedCreated.title || DEFAULT_TITLE);
+      setTitle(normalizedCreated.title || defaultTitle);
       setSelectedDay(1);
     } catch (error) {
       console.error('Erro ao criar roteiro:', error);
-      Alert.alert('Erro', 'Não foi possível criar um novo roteiro.');
+      Alert.alert(t('common.error'), t('itinerary.createError', 'Não foi possível criar um novo roteiro.'));
     } finally {
       setCreating(false);
     }
@@ -551,22 +555,22 @@ export default function ItineraryScreen() {
 
     if (itineraries.length <= 1) {
       Alert.alert(
-        'Atenção',
-        'Você precisa ter pelo menos um roteiro. Crie outro antes de apagar este.'
+        t('common.warning', 'Atenção'),
+        t('itinerary.needOneItinerary', 'Você precisa ter pelo menos um roteiro. Crie outro antes de apagar este.')
       );
       return;
     }
 
     Alert.alert(
-      'Apagar roteiro',
-      `Deseja apagar "${itinerary.title}"? Todos os dias e locais dele serão removidos.`,
+      t('itinerary.deleteItineraryTitle', 'Apagar roteiro'),
+      t('itinerary.deleteItineraryMessage', { title: itinerary.title }),
       [
         {
-          text: 'Cancelar',
+          text: t('common.cancel'),
           style: 'cancel',
         },
         {
-          text: 'Apagar',
+          text: t('itinerary.delete', 'Apagar'),
           style: 'destructive',
           onPress: async () => {
             try {
@@ -584,12 +588,12 @@ export default function ItineraryScreen() {
               setItinerary(next);
 
               if (next) {
-                setTitle(next.title || DEFAULT_TITLE);
+                setTitle(next.title || defaultTitle);
                 setSelectedDay(normalizeDays(next.days)[0]?.day || 1);
               }
             } catch (error) {
               console.error('Erro ao apagar roteiro:', error);
-              Alert.alert('Erro', 'Não foi possível apagar este roteiro.');
+              Alert.alert(t('common.error'), t('itinerary.deleteItineraryError', 'Não foi possível apagar este roteiro.'));
             } finally {
               setSaving(false);
             }
@@ -606,7 +610,7 @@ export default function ItineraryScreen() {
     };
 
     setItinerary(normalized);
-    setTitle(normalized.title || DEFAULT_TITLE);
+    setTitle(normalized.title || defaultTitle);
     setSelectedDay(normalized.days[0]?.day || 1);
   }
 
@@ -636,7 +640,7 @@ export default function ItineraryScreen() {
       }
     } catch (error) {
       console.error('Erro ao adicionar dia:', error);
-      Alert.alert('Erro', 'Não foi possível adicionar um novo dia.');
+      Alert.alert(t('common.error'), t('itinerary.addDayError', 'Não foi possível adicionar um novo dia.'));
     } finally {
       setSaving(false);
     }
@@ -646,20 +650,20 @@ export default function ItineraryScreen() {
     if (!itinerary) return;
 
     if (days.length <= 1) {
-      Alert.alert('Atenção', 'O roteiro precisa ter pelo menos um dia.');
+      Alert.alert(t('common.warning', 'Atenção'), t('itinerary.needOneDay', 'O roteiro precisa ter pelo menos um dia.'));
       return;
     }
 
     Alert.alert(
-      'Remover dia',
-      `Deseja remover o Dia ${dayNumber}? Os locais desse dia também serão removidos.`,
+      t('itinerary.confirmDeleteDayTitle'),
+      t('itinerary.confirmDeleteDayMessage', { day: dayNumber }),
       [
         {
-          text: 'Cancelar',
+          text: t('common.cancel'),
           style: 'cancel',
         },
         {
-          text: 'Remover',
+          text: t('itinerary.remove', 'Remover'),
           style: 'destructive',
           onPress: async () => {
             try {
@@ -684,7 +688,7 @@ export default function ItineraryScreen() {
               }
             } catch (error) {
               console.error('Erro ao remover dia:', error);
-              Alert.alert('Erro', 'Não foi possível remover este dia.');
+              Alert.alert(t('common.error'), t('itinerary.deleteDayError'));
             } finally {
               setSaving(false);
             }
@@ -697,13 +701,13 @@ export default function ItineraryScreen() {
   async function removePlace(placeId: string) {
     if (!itinerary) return;
 
-    Alert.alert('Remover local', 'Deseja remover este local do roteiro?', [
+    Alert.alert(t('itinerary.confirmRemovePlaceTitle'), t('itinerary.confirmRemovePlaceMessage'), [
       {
-        text: 'Cancelar',
+        text: t('common.cancel'),
         style: 'cancel',
       },
       {
-        text: 'Remover',
+        text: t('itinerary.remove', 'Remover'),
         style: 'destructive',
         onPress: async () => {
           try {
@@ -717,7 +721,7 @@ export default function ItineraryScreen() {
             updateSelectedItinerary(updated);
           } catch (error) {
             console.error('Erro ao remover local:', error);
-            Alert.alert('Erro', 'Não foi possível remover o local.');
+            Alert.alert(t('common.error'), t('itinerary.removePlaceError'));
           } finally {
             setSaving(false);
           }
@@ -768,7 +772,7 @@ export default function ItineraryScreen() {
       updateSelectedItinerary(updated);
     } catch (error) {
       console.error('Erro ao salvar roteiro:', error);
-      Alert.alert('Erro', 'Não foi possível salvar as alterações.');
+      Alert.alert(t('common.error'), t('itinerary.saveError'));
       loadItineraries(false);
     } finally {
       setSaving(false);
@@ -829,7 +833,7 @@ export default function ItineraryScreen() {
 
   async function handleSharePdf() {
     if (!itinerary) {
-      Alert.alert('Atenção', 'Nenhum roteiro selecionado para compartilhar.');
+      Alert.alert(t('common.warning', 'Atenção'), t('itinerary.noSelectedItinerary', 'Nenhum roteiro selecionado para compartilhar.'));
       return;
     }
 
@@ -838,11 +842,11 @@ export default function ItineraryScreen() {
 
       const pdfItinerary: Itinerary = {
         ...itinerary,
-        title: title.trim() || itinerary.title || DEFAULT_TITLE,
+        title: title.trim() || itinerary.title || defaultTitle,
         days: normalizeDays(days),
       };
 
-      const html = buildItineraryPdfHtml(pdfItinerary);
+      const html = buildItineraryPdfHtml(pdfItinerary, t, locale);
 
       const file = await Print.printToFileAsync({
         html,
@@ -853,20 +857,20 @@ export default function ItineraryScreen() {
 
       if (!canShare) {
         Alert.alert(
-          'Compartilhamento indisponível',
-          'Não foi possível abrir o compartilhamento neste dispositivo.'
+          t('itinerary.shareUnavailableTitle', 'Compartilhamento indisponível'),
+          t('itinerary.shareUnavailableMessage', 'Não foi possível abrir o compartilhamento neste dispositivo.')
         );
         return;
       }
 
       await Sharing.shareAsync(file.uri, {
         mimeType: 'application/pdf',
-        dialogTitle: 'Compartilhar roteiro',
+        dialogTitle: t('itinerary.sharePdf'),
         UTI: 'com.adobe.pdf',
       });
     } catch (error) {
       console.error('Erro ao gerar PDF do roteiro:', error);
-      Alert.alert('Erro', 'Não foi possível gerar o PDF do roteiro.');
+      Alert.alert(t('common.error'), t('itinerary.pdfError'));
     } finally {
       setSaving(false);
     }
@@ -876,7 +880,7 @@ export default function ItineraryScreen() {
     return (
       <View style={styles.itinerarySelectorArea}>
         <Text style={[styles.label, { color: colors.muted }]}>
-          Meus roteiros
+          {t('itinerary.myItineraries', 'Meus roteiros')}
         </Text>
 
         <ScrollView
@@ -915,7 +919,7 @@ export default function ItineraryScreen() {
                   ]}
                   numberOfLines={1}
                 >
-                  {item.title || DEFAULT_TITLE}
+                  {item.title || defaultTitle}
                 </Text>
               </TouchableOpacity>
             );
@@ -943,7 +947,7 @@ export default function ItineraryScreen() {
                     { color: colors.primary },
                   ]}
                 >
-                  Novo
+                  {t('itinerary.new', 'Novo')}
                 </Text>
               </>
             )}
@@ -978,7 +982,7 @@ export default function ItineraryScreen() {
               },
             ]}
           >
-            Dia {day.day}
+            {t('itinerary.day', { day: day.day })}
           </Text>
         </TouchableOpacity>
 
@@ -1016,7 +1020,7 @@ export default function ItineraryScreen() {
 
           <View style={styles.placeInfo}>
             <Text style={[styles.placeName, { color: colors.text }]}>
-              {item.place?.name || 'Local sem nome'}
+              {item.place?.name || t('itinerary.unnamedPlace')}
             </Text>
 
             {!!item.place?.address && (
@@ -1059,11 +1063,11 @@ export default function ItineraryScreen() {
 
         <View style={styles.row}>
           <View style={styles.timeArea}>
-            <Text style={[styles.label, { color: colors.muted }]}>Horário</Text>
+            <Text style={[styles.label, { color: colors.muted }]}>{t('itinerary.time')}</Text>
 
             <TextInput
               value={item.time || ''}
-              placeholder="09:00"
+              placeholder={t('itinerary.timePlaceholder', '09:00')}
               placeholderTextColor={colors.muted}
               onChangeText={(value) =>
                 updatePlaceLocal(item.place._id, 'time', value)
@@ -1088,11 +1092,11 @@ export default function ItineraryScreen() {
           </TouchableOpacity>
         </View>
 
-        <Text style={[styles.label, { color: colors.muted }]}>Observações</Text>
+        <Text style={[styles.label, { color: colors.muted }]}>{t('itinerary.notes')}</Text>
 
         <TextInput
           value={item.notes || ''}
-          placeholder="Ex: comprar ingresso antes, visitar pela manhã..."
+          placeholder={t('itinerary.notesPlaceholder', 'Ex: comprar ingresso antes, visitar pela manhã...')}
           placeholderTextColor={colors.muted}
           multiline
           onChangeText={(value) =>
@@ -1119,7 +1123,7 @@ export default function ItineraryScreen() {
       >
         <ActivityIndicator size="large" color={colors.primary} />
         <Text style={[styles.loadingText, { color: colors.muted }]}>
-          Carregando roteiro...
+          {t('itinerary.loading')}
         </Text>
       </SafeAreaView>
     );
@@ -1149,11 +1153,11 @@ export default function ItineraryScreen() {
           <View style={styles.header}>
             <View style={styles.headerTextArea}>
               <Text style={[styles.title, { color: colors.text }]}>
-                Meu roteiro
+                {t('itinerary.title')}
               </Text>
 
               <Text style={[styles.subtitle, { color: colors.muted }]}>
-                Crie roteiros, organize dias e defina a ordem dos locais.
+                {t('itinerary.subtitle', 'Crie roteiros, organize dias e defina a ordem dos locais.')}
               </Text>
             </View>
 
@@ -1172,14 +1176,14 @@ export default function ItineraryScreen() {
             ]}
           >
             <Text style={[styles.label, { color: colors.muted }]}>
-              Nome do roteiro
+              {t('itinerary.titlePlaceholder')}
             </Text>
 
             <View style={styles.titleRow}>
               <TextInput
                 value={title}
                 onChangeText={setTitle}
-                placeholder="Ex: Viagem em São Paulo"
+                placeholder={t('itinerary.titleExample', 'Ex: Viagem em São Paulo')}
                 placeholderTextColor={colors.muted}
                 autoCorrect={false}
                 style={[
@@ -1217,7 +1221,7 @@ export default function ItineraryScreen() {
               <Ionicons name="document-text-outline" size={18} color="#FFFFFF" />
 
               <Text style={styles.sharePdfButtonText}>
-                Compartilhar roteiro em PDF
+                {t('itinerary.sharePdf')}
               </Text>
             </TouchableOpacity>
 
@@ -1247,7 +1251,7 @@ export default function ItineraryScreen() {
                   },
                 ]}
               >
-                Apagar roteiro atual
+                {t('itinerary.deleteCurrentItinerary', 'Apagar roteiro atual')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -1274,7 +1278,7 @@ export default function ItineraryScreen() {
               >
                 <Ionicons name="add" size={18} color={colors.primary} />
                 <Text style={[styles.addDayText, { color: colors.primary }]}>
-                  Dia
+                  {t('itinerary.newDay')}
                 </Text>
               </TouchableOpacity>
             </ScrollView>
@@ -1282,11 +1286,11 @@ export default function ItineraryScreen() {
 
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              Dia {selectedDay}
+              {t('itinerary.day', { day: selectedDay })}
             </Text>
 
             <Text style={[styles.sectionSubtitle, { color: colors.muted }]}>
-              {currentPlaces.length} local(is)
+              {t('itinerary.placesCount', { count: currentPlaces.length })}
             </Text>
           </View>
 
@@ -1303,12 +1307,11 @@ export default function ItineraryScreen() {
               <Ionicons name="map-outline" size={44} color={colors.muted} />
 
               <Text style={[styles.emptyTitle, { color: colors.text }]}>
-                Nenhum local neste dia
+                {t('itinerary.emptyDayTitle', 'Nenhum local neste dia')}
               </Text>
 
               <Text style={[styles.emptyText, { color: colors.muted }]}>
-                Vá até a tela de detalhes de um local e toque em “Adicionar ao
-                roteiro”.
+                {t('itinerary.emptyDayHint', 'Vá até a tela de detalhes de um local e toque em “Adicionar ao roteiro”.')}
               </Text>
             </View>
           ) : (

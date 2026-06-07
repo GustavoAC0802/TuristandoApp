@@ -18,11 +18,12 @@ function normalizeLanguage(language?: string): SupportedLanguage | null {
   return normalized as SupportedLanguage;
 }
 
-function getLibreTranslateBaseUrl() {
-  return (process.env.LIBRETRANSLATE_URL || 'http://localhost:5000').replace(
-    /\/+$/,
-    ''
-  );
+function normalizeText(text: string) {
+  return text
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
 }
 
 const FALLBACK_TRANSLATIONS: Record<
@@ -318,75 +319,79 @@ const FALLBACK_TRANSLATIONS: Record<
   },
 };
 
-function normalizeFallbackKey(text: string) {
-  return text
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-}
-
 function findFallbackTranslation(text: string, target: SupportedLanguage) {
-  const normalizedText = normalizeFallbackKey(text);
+  const normalized = normalizeText(text);
 
   const entry = Object.entries(FALLBACK_TRANSLATIONS).find(([key]) => {
-    return normalizeFallbackKey(key) === normalizedText;
+    return normalizeText(key) === normalized;
   });
 
   return entry?.[1]?.[target] || null;
 }
 
-function sendFallbackIfPossible({
-  res,
+async function tryLibreTranslate({
   text,
   source,
   target,
-  warning,
 }: {
-  res: Response;
   text: string;
   source: SupportedLanguage;
   target: SupportedLanguage;
-  warning: string;
 }) {
-  const fallback = findFallbackTranslation(text, target);
+  const baseUrl = (process.env.LIBRETRANSLATE_URL || '').replace(/\/+$/, '');
 
-  if (!fallback) return false;
-
-  res.json({
-    originalText: text.trim(),
-    translatedText: fallback,
-    source,
-    target,
-    provider: 'fallback',
-    warning,
-  });
-
-  return true;
-}
-
-async function readResponseBody(response: globalThis.Response) {
-  const raw = await response.text();
-
-  if (!raw) {
+  if (!baseUrl) {
     return null;
   }
 
-  const contentType = response.headers.get('content-type') || '';
+  const controller = new AbortController();
 
-  if (contentType.includes('text/html') || raw.trim().startsWith('<!DOCTYPE')) {
-    return {
-      html: true,
-      raw: raw.slice(0, 500),
-    };
-  }
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, 3500);
 
   try {
-    return JSON.parse(raw);
-  } catch {
-    return {
-      raw,
+    const apiKey = process.env.LIBRETRANSLATE_API_KEY;
+
+    const body: Record<string, string> = {
+      q: text,
+      source,
+      target,
+      format: 'text',
     };
+
+    if (apiKey) {
+      body.api_key = apiKey;
+    }
+
+    const response = await fetch(`${baseUrl}/translate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    const contentType = response.headers.get('content-type') || '';
+    const raw = await response.text();
+
+    if (
+      !response.ok ||
+      contentType.includes('text/html') ||
+      raw.trim().startsWith('<')
+    ) {
+      return null;
+    }
+
+    const data = JSON.parse(raw);
+
+    return data?.translatedText || null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -434,91 +439,42 @@ export async function translateText(req: Request, res: Response) {
       });
     }
 
-    const baseUrl = getLibreTranslateBaseUrl();
-    const apiKey = process.env.LIBRETRANSLATE_API_KEY;
+    const fallback = findFallbackTranslation(trimmedText, targetLanguage);
 
-    const body: Record<string, string> = {
-      q: trimmedText,
-      source: sourceLanguage,
-      target: targetLanguage,
-      format: 'text',
-    };
-
-    if (apiKey) {
-      body.api_key = apiKey;
+    if (fallback) {
+      return res.json({
+        originalText: trimmedText,
+        translatedText: fallback,
+        source: sourceLanguage,
+        target: targetLanguage,
+        provider: 'fallback',
+        warning:
+          'Tradução feita pelo fallback do backend para garantir estabilidade.',
+      });
     }
 
-    const response = await fetch(`${baseUrl}/translate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify(body),
+    const libreTranslation = await tryLibreTranslate({
+      text: trimmedText,
+      source: sourceLanguage,
+      target: targetLanguage,
     });
 
-    const data = await readResponseBody(response);
-
-    if (!response.ok || data?.html) {
-      const sentFallback = sendFallbackIfPossible({
-        res,
-        text: trimmedText,
+    if (libreTranslation) {
+      return res.json({
+        originalText: trimmedText,
+        translatedText: libreTranslation,
         source: sourceLanguage,
         target: targetLanguage,
-        warning:
-          'LibreTranslate público indisponível ou bloqueado. Tradução local utilizada.',
-      });
-
-      if (sentFallback) return;
-
-      return res.status(502).json({
-        message: 'Erro ao consultar o LibreTranslate.',
-        details: data,
+        provider: 'LibreTranslate',
       });
     }
 
-    if (!data?.translatedText) {
-      const sentFallback = sendFallbackIfPossible({
-        res,
-        text: trimmedText,
-        source: sourceLanguage,
-        target: targetLanguage,
-        warning: 'LibreTranslate não retornou tradução válida.',
-      });
-
-      if (sentFallback) return;
-
-      return res.status(502).json({
-        message: 'A API de tradução não retornou uma tradução válida.',
-        details: data,
-      });
-    }
-
-    return res.json({
-      originalText: trimmedText,
-      translatedText: data.translatedText,
-      source: sourceLanguage,
-      target: targetLanguage,
-      provider: 'LibreTranslate',
+    return res.status(502).json({
+      message:
+        'Não foi possível traduzir o texto agora. A API externa está indisponível e não há fallback para esta frase.',
     });
   } catch (error: any) {
     console.error('Erro ao traduzir texto:', error?.message || error);
-
-    const { text, target = 'en', source = 'pt' } = req.body || {};
-    const targetLanguage = normalizeLanguage(target);
-    const sourceLanguage = normalizeLanguage(source);
-
-    if (typeof text === 'string' && targetLanguage && sourceLanguage) {
-      const sentFallback = sendFallbackIfPossible({
-        res,
-        text,
-        source: sourceLanguage,
-        target: targetLanguage,
-        warning: 'Erro no provedor externo. Tradução local utilizada.',
-      });
-
-      if (sentFallback) return;
-    }
 
     return res.status(500).json({
       message: 'Erro interno ao traduzir texto.',

@@ -52,11 +52,11 @@ const uiText = {
     originalLanguage: 'Português',
     translateTo: 'Traduzir para',
     translationIn: 'Tradução em',
-    provider: 'Traduzido com LibreTranslate',
+    provider: 'Traduzido pelo backend',
     fallbackProvider: 'Tradução local de segurança',
     errorTitle: 'Erro na tradução',
     errorMessage:
-      'Não foi possível traduzir a frase agora. Verifique sua conexão e tente novamente.',
+      'Não foi possível consultar o backend. A tradução local foi utilizada.',
   },
   en: {
     title: 'Tourist translator',
@@ -68,11 +68,11 @@ const uiText = {
     originalLanguage: 'English',
     translateTo: 'Translate to',
     translationIn: 'Translation in',
-    provider: 'Translated with LibreTranslate',
+    provider: 'Translated by backend',
     fallbackProvider: 'Local backup translation',
     errorTitle: 'Translation error',
     errorMessage:
-      'Could not translate the phrase right now. Check your connection and try again.',
+      'Could not reach the backend. Local translation was used.',
   },
   es: {
     title: 'Traductor turístico',
@@ -84,22 +84,18 @@ const uiText = {
     originalLanguage: 'Español',
     translateTo: 'Traducir a',
     translationIn: 'Traducción en',
-    provider: 'Traducido con LibreTranslate',
+    provider: 'Traducido por el backend',
     fallbackProvider: 'Traducción local de respaldo',
     errorTitle: 'Error de traducción',
     errorMessage:
-      'No fue posible traducir la frase ahora. Verifica tu conexión e inténtalo nuevamente.',
+      'No fue posible consultar el backend. Se utilizó la traducción local.',
   },
 };
 
 const phrases: Phrase[] = [
   {
     id: 'bathroom',
-    category: {
-      pt: 'Emergência',
-      en: 'Emergency',
-      es: 'Emergencia',
-    },
+    category: { pt: 'Emergência', en: 'Emergency', es: 'Emergencia' },
     text: {
       pt: 'Onde fica o banheiro?',
       en: 'Where is the bathroom?',
@@ -108,11 +104,7 @@ const phrases: Phrase[] = [
   },
   {
     id: 'help',
-    category: {
-      pt: 'Emergência',
-      en: 'Emergency',
-      es: 'Emergencia',
-    },
+    category: { pt: 'Emergência', en: 'Emergency', es: 'Emergencia' },
     text: {
       pt: 'Você pode me ajudar?',
       en: 'Can you help me?',
@@ -121,11 +113,7 @@ const phrases: Phrase[] = [
   },
   {
     id: 'hospital',
-    category: {
-      pt: 'Emergência',
-      en: 'Emergency',
-      es: 'Emergencia',
-    },
+    category: { pt: 'Emergência', en: 'Emergency', es: 'Emergencia' },
     text: {
       pt: 'Onde fica o hospital mais próximo?',
       en: 'Where is the nearest hospital?',
@@ -134,11 +122,7 @@ const phrases: Phrase[] = [
   },
   {
     id: 'police',
-    category: {
-      pt: 'Emergência',
-      en: 'Emergency',
-      es: 'Emergencia',
-    },
+    category: { pt: 'Emergência', en: 'Emergency', es: 'Emergencia' },
     text: {
       pt: 'Preciso chamar a polícia.',
       en: 'I need to call the police.',
@@ -147,11 +131,7 @@ const phrases: Phrase[] = [
   },
   {
     id: 'lost',
-    category: {
-      pt: 'Emergência',
-      en: 'Emergency',
-      es: 'Emergencia',
-    },
+    category: { pt: 'Emergência', en: 'Emergency', es: 'Emergencia' },
     text: {
       pt: 'Estou perdido. Pode me ajudar?',
       en: 'I am lost. Can you help me?',
@@ -160,11 +140,7 @@ const phrases: Phrase[] = [
   },
   {
     id: 'menu',
-    category: {
-      pt: 'Restaurante',
-      en: 'Restaurant',
-      es: 'Restaurante',
-    },
+    category: { pt: 'Restaurante', en: 'Restaurant', es: 'Restaurante' },
     text: {
       pt: 'Você tem o cardápio?',
       en: 'Do you have the menu?',
@@ -173,11 +149,7 @@ const phrases: Phrase[] = [
   },
   {
     id: 'water',
-    category: {
-      pt: 'Restaurante',
-      en: 'Restaurant',
-      es: 'Restaurante',
-    },
+    category: { pt: 'Restaurante', en: 'Restaurant', es: 'Restaurante' },
     text: {
       pt: 'Eu gostaria de uma água, por favor.',
       en: 'I would like some water, please.',
@@ -186,11 +158,7 @@ const phrases: Phrase[] = [
   },
   {
     id: 'bill',
-    category: {
-      pt: 'Restaurante',
-      en: 'Restaurant',
-      es: 'Restaurante',
-    },
+    category: { pt: 'Restaurante', en: 'Restaurant', es: 'Restaurante' },
     text: {
       pt: 'A conta, por favor.',
       en: 'The bill, please.',
@@ -199,11 +167,7 @@ const phrases: Phrase[] = [
   },
   {
     id: 'noMeat',
-    category: {
-      pt: 'Restaurante',
-      en: 'Restaurant',
-      es: 'Restaurante',
-    },
+    category: { pt: 'Restaurante', en: 'Restaurant', es: 'Restaurante' },
     text: {
       pt: 'Eu não como carne.',
       en: 'I do not eat meat.',
@@ -212,11 +176,7 @@ const phrases: Phrase[] = [
   },
   {
     id: 'bus',
-    category: {
-      pt: 'Transporte',
-      en: 'Transport',
-      es: 'Transporte',
-    },
+    category: { pt: 'Transporte', en: 'Transport', es: 'Transporte' },
     text: {
       pt: 'Onde pego o ônibus?',
       en: 'Where can I take the bus?',
@@ -225,11 +185,7 @@ const phrases: Phrase[] = [
   },
   {
     id: 'station',
-    category: {
-      pt: 'Transporte',
-      en: 'Transport',
-      es: 'Transporte',
-    },
+    category: { pt: 'Transporte', en: 'Transport', es: 'Transporte' },
     text: {
       pt: 'Onde fica a estação mais próxima?',
       en: 'Where is the nearest station?',
@@ -238,11 +194,7 @@ const phrases: Phrase[] = [
   },
   {
     id: 'taxi',
-    category: {
-      pt: 'Transporte',
-      en: 'Transport',
-      es: 'Transporte',
-    },
+    category: { pt: 'Transporte', en: 'Transport', es: 'Transporte' },
     text: {
       pt: 'Quanto custa uma corrida até o centro?',
       en: 'How much is a ride to downtown?',
@@ -251,11 +203,7 @@ const phrases: Phrase[] = [
   },
   {
     id: 'hotelReservation',
-    category: {
-      pt: 'Hotel',
-      en: 'Hotel',
-      es: 'Hotel',
-    },
+    category: { pt: 'Hotel', en: 'Hotel', es: 'Hotel' },
     text: {
       pt: 'Tenho uma reserva em meu nome.',
       en: 'I have a reservation under my name.',
@@ -264,11 +212,7 @@ const phrases: Phrase[] = [
   },
   {
     id: 'checkin',
-    category: {
-      pt: 'Hotel',
-      en: 'Hotel',
-      es: 'Hotel',
-    },
+    category: { pt: 'Hotel', en: 'Hotel', es: 'Hotel' },
     text: {
       pt: 'Que horas posso fazer o check-in?',
       en: 'What time can I check in?',
@@ -277,11 +221,7 @@ const phrases: Phrase[] = [
   },
   {
     id: 'wifi',
-    category: {
-      pt: 'Hotel',
-      en: 'Hotel',
-      es: 'Hotel',
-    },
+    category: { pt: 'Hotel', en: 'Hotel', es: 'Hotel' },
     text: {
       pt: 'Qual é a senha do Wi-Fi?',
       en: 'What is the Wi-Fi password?',
@@ -290,11 +230,7 @@ const phrases: Phrase[] = [
   },
   {
     id: 'price',
-    category: {
-      pt: 'Compras',
-      en: 'Shopping',
-      es: 'Compras',
-    },
+    category: { pt: 'Compras', en: 'Shopping', es: 'Compras' },
     text: {
       pt: 'Quanto custa isso?',
       en: 'How much does this cost?',
@@ -303,11 +239,7 @@ const phrases: Phrase[] = [
   },
   {
     id: 'card',
-    category: {
-      pt: 'Compras',
-      en: 'Shopping',
-      es: 'Compras',
-    },
+    category: { pt: 'Compras', en: 'Shopping', es: 'Compras' },
     text: {
       pt: 'Vocês aceitam cartão?',
       en: 'Do you accept card?',
@@ -316,11 +248,7 @@ const phrases: Phrase[] = [
   },
   {
     id: 'discount',
-    category: {
-      pt: 'Compras',
-      en: 'Shopping',
-      es: 'Compras',
-    },
+    category: { pt: 'Compras', en: 'Shopping', es: 'Compras' },
     text: {
       pt: 'Você pode fazer um desconto?',
       en: 'Can you give me a discount?',
@@ -342,18 +270,26 @@ function getLanguageLabel(code: AppLanguage) {
   return allLanguages.find((language) => language.code === code)?.label || code;
 }
 
+function getLocalTranslation(phrase: Phrase, target: AppLanguage) {
+  return phrase.text[target];
+}
+
 async function requestTranslation(payload: {
   text: string;
   source: AppLanguage;
   target: AppLanguage;
 }) {
   try {
-    return await api.post('/translation', payload);
+    return await api.post('/translation', payload, {
+      timeout: 8000,
+    });
   } catch (error: any) {
     const status = error?.response?.status;
 
     if (status === 404) {
-      return api.post('/translation/translate', payload);
+      return api.post('/translation/translate', payload, {
+        timeout: 8000,
+      });
     }
 
     throw error;
@@ -412,27 +348,37 @@ export default function UsefulPhrases() {
       setTranslatedText('');
       setTranslationProvider('');
 
-      const response = await requestTranslation({
-        text: phrase.text[appLanguage],
-        source: appLanguage,
-        target: selectedLanguage.code,
-      });
+      try {
+        const response = await requestTranslation({
+          text: phrase.text[appLanguage],
+          source: appLanguage,
+          target: selectedLanguage.code,
+        });
 
-      const translated = response.data?.translatedText;
+        const translated = response.data?.translatedText;
 
-      if (!translated) {
-        throw new Error('Resposta de tradução inválida.');
+        if (!translated) {
+          throw new Error('Resposta de tradução inválida.');
+        }
+
+        setTranslatedText(translated);
+        setTranslationProvider(response.data?.provider || 'backend');
+      } catch (error: any) {
+        console.error(
+          'Erro ao traduzir pelo backend. Usando tradução local:',
+          error?.response?.data || error?.message || error
+        );
+
+        const localTranslation = getLocalTranslation(
+          phrase,
+          selectedLanguage.code
+        );
+
+        setTranslatedText(localTranslation);
+        setTranslationProvider('local');
+
+        Alert.alert(texts.errorTitle, texts.errorMessage);
       }
-
-      setTranslatedText(translated);
-      setTranslationProvider(response.data?.provider || 'LibreTranslate');
-    } catch (error: any) {
-      console.error(
-        'Erro ao traduzir frase:',
-        error?.response?.data || error?.message || error
-      );
-
-      Alert.alert(texts.errorTitle, texts.errorMessage);
     } finally {
       setLoading(false);
     }
@@ -453,7 +399,7 @@ export default function UsefulPhrases() {
   }
 
   function getProviderText() {
-    if (translationProvider === 'fallback') {
+    if (translationProvider === 'fallback' || translationProvider === 'local') {
       return texts.fallbackProvider;
     }
 
