@@ -53,9 +53,10 @@ const uiText = {
     translateTo: 'Traduzir para',
     translationIn: 'Tradução em',
     provider: 'Traduzido com LibreTranslate',
+    fallbackProvider: 'Tradução local de segurança',
     errorTitle: 'Erro na tradução',
     errorMessage:
-      'Não foi possível traduzir a frase agora. Verifique se o backend e o LibreTranslate estão rodando.',
+      'Não foi possível traduzir a frase agora. Verifique sua conexão e tente novamente.',
   },
   en: {
     title: 'Tourist translator',
@@ -68,9 +69,10 @@ const uiText = {
     translateTo: 'Translate to',
     translationIn: 'Translation in',
     provider: 'Translated with LibreTranslate',
+    fallbackProvider: 'Local backup translation',
     errorTitle: 'Translation error',
     errorMessage:
-      'Could not translate the phrase right now. Check if the backend and LibreTranslate are running.',
+      'Could not translate the phrase right now. Check your connection and try again.',
   },
   es: {
     title: 'Traductor turístico',
@@ -83,9 +85,10 @@ const uiText = {
     translateTo: 'Traducir a',
     translationIn: 'Traducción en',
     provider: 'Traducido con LibreTranslate',
+    fallbackProvider: 'Traducción local de respaldo',
     errorTitle: 'Error de traducción',
     errorMessage:
-      'No fue posible traducir la frase ahora. Verifica si el backend y LibreTranslate están funcionando.',
+      'No fue posible traducir la frase ahora. Verifica tu conexión e inténtalo nuevamente.',
   },
 };
 
@@ -339,6 +342,24 @@ function getLanguageLabel(code: AppLanguage) {
   return allLanguages.find((language) => language.code === code)?.label || code;
 }
 
+async function requestTranslation(payload: {
+  text: string;
+  source: AppLanguage;
+  target: AppLanguage;
+}) {
+  try {
+    return await api.post('/translation', payload);
+  } catch (error: any) {
+    const status = error?.response?.status;
+
+    if (status === 404) {
+      return api.post('/translation/translate', payload);
+    }
+
+    throw error;
+  }
+}
+
 export default function UsefulPhrases() {
   const { i18n } = useTranslation();
 
@@ -355,6 +376,7 @@ export default function UsefulPhrases() {
   const [selectedCategory, setSelectedCategory] = useState(texts.all);
   const [selectedPhraseId, setSelectedPhraseId] = useState<string | null>(null);
   const [translatedText, setTranslatedText] = useState('');
+  const [translationProvider, setTranslationProvider] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -362,7 +384,8 @@ export default function UsefulPhrases() {
     setSelectedCategory(texts.all);
     setSelectedPhraseId(null);
     setTranslatedText('');
-  }, [appLanguage]);
+    setTranslationProvider('');
+  }, [appLanguage, availableTargetLanguages, texts.all]);
 
   const categories = useMemo(() => {
     const uniqueCategories = Array.from(
@@ -387,16 +410,27 @@ export default function UsefulPhrases() {
       setLoading(true);
       setSelectedPhraseId(phrase.id);
       setTranslatedText('');
+      setTranslationProvider('');
 
-      const response = await api.post('/translation/translate', {
+      const response = await requestTranslation({
         text: phrase.text[appLanguage],
-        source: appLanguage,  
+        source: appLanguage,
         target: selectedLanguage.code,
       });
 
-      setTranslatedText(response.data.translatedText);
-    } catch (error) {
-      console.error('Erro ao traduzir frase:', error);
+      const translated = response.data?.translatedText;
+
+      if (!translated) {
+        throw new Error('Resposta de tradução inválida.');
+      }
+
+      setTranslatedText(translated);
+      setTranslationProvider(response.data?.provider || 'LibreTranslate');
+    } catch (error: any) {
+      console.error(
+        'Erro ao traduzir frase:',
+        error?.response?.data || error?.message || error
+      );
 
       Alert.alert(texts.errorTitle, texts.errorMessage);
     } finally {
@@ -408,12 +442,22 @@ export default function UsefulPhrases() {
     setSelectedLanguage(language);
     setSelectedPhraseId(null);
     setTranslatedText('');
+    setTranslationProvider('');
   }
 
   function handleChangeCategory(category: string) {
     setSelectedCategory(category);
     setSelectedPhraseId(null);
     setTranslatedText('');
+    setTranslationProvider('');
+  }
+
+  function getProviderText() {
+    if (translationProvider === 'fallback') {
+      return texts.fallbackProvider;
+    }
+
+    return texts.provider;
   }
 
   return (
@@ -522,7 +566,7 @@ export default function UsefulPhrases() {
 
                 <Text style={styles.translationText}>{translatedText}</Text>
 
-                <Text style={styles.providerText}>{texts.provider}</Text>
+                <Text style={styles.providerText}>{getProviderText()}</Text>
               </View>
             ) : null}
           </View>
