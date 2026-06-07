@@ -21,20 +21,28 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-let isMongoConnected = false;
+let mongoConnectionPromise: Promise<typeof mongoose> | null = null;
 
 async function connectMongo() {
-  if (isMongoConnected || mongoose.connection.readyState === 1) {
+  if (mongoose.connection.readyState === 1) {
     return;
   }
 
-  if (!process.env.MONGO_URI) {
+  if (mongoose.connection.readyState === 2 && mongoConnectionPromise) {
+    await mongoConnectionPromise;
+    return;
+  }
+
+  const mongoUri = process.env.MONGO_URI;
+
+  if (!mongoUri) {
     throw new Error("MONGO_URI não configurada");
   }
 
-  await mongoose.connect(process.env.MONGO_URI);
+  mongoConnectionPromise = mongoose.connect(mongoUri);
 
-  isMongoConnected = true;
+  await mongoConnectionPromise;
+
   console.log("MongoDB conectado");
 }
 
@@ -42,11 +50,12 @@ app.use(async (_req, res, next) => {
   try {
     await connectMongo();
     next();
-  } catch (error) {
-    console.log("Erro ao conectar MongoDB:", error);
+  } catch (error: any) {
+    console.log("Erro ao conectar MongoDB:", error?.message || error);
 
     return res.status(500).json({
       message: "Erro ao conectar ao banco de dados.",
+      detail: error?.message || "Erro desconhecido",
     });
   }
 });
@@ -58,12 +67,22 @@ app.get("/", (_req, res) => {
   });
 });
 
-app.get("/health", (_req, res) => {
-  res.json({
-    status: "ok",
-    database:
-      mongoose.connection.readyState === 1 ? "connected" : "disconnected",
-  });
+app.get("/health", async (_req, res) => {
+  try {
+    await connectMongo();
+
+    return res.json({
+      status: "ok",
+      database:
+        mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      status: "error",
+      database: "disconnected",
+      message: error?.message || "Erro ao conectar ao banco.",
+    });
+  }
 });
 
 app.use("/users", userRoutes);
