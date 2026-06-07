@@ -27,6 +27,15 @@
           "faceIDPermission": "Permita que o Turistando proteja sua sessão com biometria."
         }
       ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Permita que o Turistando use sua localização para mostrar locais próximos e enviar alertas de eventos.",
+          "locationAlwaysPermission": "Permita que o Turistando use sua localização em segundo plano para enviar alertas quando você estiver perto de eventos.",
+          "locationWhenInUsePermission": "Permita que o Turistando use sua localização para mostrar locais próximos."
+        }
+      ],
+      "expo-notifications",
       "expo-build-properties",
       "@morrowdigital/watermelondb-expo-plugin"
     ],
@@ -36,6 +45,12 @@
     },
     "android": {
       "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "POST_NOTIFICATIONS"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"

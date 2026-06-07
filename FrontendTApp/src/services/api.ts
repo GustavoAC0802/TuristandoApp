@@ -1,30 +1,40 @@
 import axios from 'axios';
-import { getToken } from './SecureStorage';
 import Constants from 'expo-constants';
 
-const API_URL = Constants.expoConfig?.extra?.apiUrl;
-
-console.log('API_URL:', API_URL);
+const API_URL =
+  process.env.API_URL ||
+  Constants.expoConfig?.extra?.API_URL ||
+  'https://turistando-app.vercel.app';
 
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 10000,
+  timeout: 25000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-api.interceptors.request.use(async config => {
-  const token = await getToken();
-
-  console.log('BASE URL:', config.baseURL);
+api.interceptors.request.use((config) => {
+  console.log('BASE URL:', API_URL);
   console.log('URL:', config.url);
-
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error?.response?.status;
+    const message = error?.message;
+
+    console.log('API ERROR:', {
+      url: error?.config?.url,
+      status,
+      message,
+      data: error?.response?.data,
+    });
+
+    return Promise.reject(error);
+  }
+);
 
 export default api;
