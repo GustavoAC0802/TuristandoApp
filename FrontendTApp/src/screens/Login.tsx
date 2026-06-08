@@ -14,6 +14,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useDispatch } from 'react-redux';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useTranslation } from 'react-i18next';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import api from '../services/api';
 import {
@@ -23,6 +24,21 @@ import {
 } from '../services/SecureStorage';
 import { getLastEmail, saveLastEmail } from '../services/AppStorage';
 import { loginSuccess } from '../slices/authSlice';
+
+const TOKEN_STORAGE_KEYS = [
+  'token',
+  '@turistando:token',
+  'authToken',
+  '@auth:token',
+];
+
+async function saveAuthTokenEverywhere(token: string) {
+  await saveToken(token);
+
+  await Promise.all(
+    TOKEN_STORAGE_KEYS.map((key) => AsyncStorage.setItem(key, token))
+  );
+}
 
 export default function LoginScreen() {
   const navigation = useNavigation<any>();
@@ -82,13 +98,17 @@ export default function LoginScreen() {
         password: password.trim(),
       });
 
-      const token = response?.data?.token;
+      const token =
+        response?.data?.token ||
+        response?.data?.accessToken ||
+        response?.data?.jwt;
 
       if (!token) {
+        console.log('LOGIN RESPONSE SEM TOKEN:', response?.data);
         throw new Error(t('login.alerts.tokenNotReceived'));
       }
 
-      await saveToken(token);
+      await saveAuthTokenEverywhere(token);
       await saveLastEmail(email.trim());
 
       const userData = await getUserProfile(token);
@@ -145,6 +165,8 @@ export default function LoginScreen() {
       if (!result.success) {
         return;
       }
+
+      await saveAuthTokenEverywhere(savedToken);
 
       const userData = await getUserProfile(savedToken);
 

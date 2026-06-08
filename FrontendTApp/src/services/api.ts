@@ -1,10 +1,7 @@
 import axios from 'axios';
-import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_URL =
-  process.env.API_URL ||
-  Constants.expoConfig?.extra?.API_URL ||
-  'https://turistando-app.vercel.app';
+const API_URL = process.env.API_URL || 'https://turistando-app.vercel.app';
 
 const api = axios.create({
   baseURL: API_URL,
@@ -14,22 +11,31 @@ const api = axios.create({
   },
 });
 
-api.interceptors.request.use((config) => {
+api.interceptors.request.use(async (config) => {
+  const token =
+    (await AsyncStorage.getItem('token')) ||
+    (await AsyncStorage.getItem('@turistando:token')) ||
+    (await AsyncStorage.getItem('authToken')) ||
+    (await AsyncStorage.getItem('@auth:token'));
+
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+
   console.log('BASE URL:', API_URL);
   console.log('URL:', config.url);
+  console.log('TOKEN ENVIADO?', token ? 'SIM' : 'NÃO');
+
   return config;
 });
 
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    const status = error?.response?.status;
-    const message = error?.message;
-
     console.log('API ERROR:', {
       url: error?.config?.url,
-      status,
-      message,
+      status: error?.response?.status,
+      message: error?.message,
       data: error?.response?.data,
     });
 
